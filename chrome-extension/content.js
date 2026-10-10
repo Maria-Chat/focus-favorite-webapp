@@ -1,7 +1,9 @@
 // Focus Favorite Chrome Extension - Enhanced DOM Content Extractor (Manifest V3)
-console.log('⚡ Focus Favorite Collector Active on:', window.location.hostname);
+if (!window.focusFavoriteInjected) {
+  window.focusFavoriteInjected = true;
+  console.log('⚡ Focus Favorite Collector Active on:', window.location.hostname);
 
-let isAutoScrolling = false;
+  var isAutoScrolling = false;
 
 // Helper to sanitize & produce clean canonical YouTube URL
 function getCleanYouTubeUrl(rawHref) {
@@ -68,40 +70,47 @@ function extractSavedContent(incremental = false) {
   const seenUrls = new Set();
 
   if (hostname.includes('youtube.com')) {
-    // 1. YouTube Playlist & Saved Shorts Pages (youtube.com/playlist?list=...)
     if (href.includes('/playlist?list=')) {
-      const primaryContainer =
-        document.querySelector('ytd-browse[page-subtype="playlist"] #primary') ||
-        document.querySelector('ytd-browse #primary') ||
-        document.querySelector('#primary');
+      // BRUTE FORCE EXTRACTION: Ignore containers entirely. Just find all /watch links on the screen.
+      const links = document.querySelectorAll('a[href*="/watch"], a[href*="/shorts/"]');
 
-      if (primaryContainer) {
-        const cards = primaryContainer.querySelectorAll(
-          'ytd-playlist-video-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, ytd-grid-video-renderer'
-        );
+      if (links.length > 0) {
+        links.forEach((linkEl) => {
+          if (incremental && linkEl.dataset.favExtracted) return;
+          
+          const cleanUrl = getCleanYouTubeUrl(linkEl.href);
+          if (!cleanUrl || seenUrls.has(cleanUrl)) return;
+          
+          // Must have some title text (ignore empty links or pure timestamps)
+          let titleText = linkEl.innerText.trim() || linkEl.getAttribute('title') || linkEl.getAttribute('aria-label') || '';
+          if (!titleText || titleText.match(/^(\d+:)?\d+:\d+$/)) {
+             // Fallback to parent container if link has no text
+             const parent = linkEl.closest('ytd-playlist-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, yt-lockup-view-model, div#content');
+             if (parent) {
+                 const titleEl = parent.querySelector('#video-title, #video-title-link, h3');
+                 if (titleEl) titleText = titleEl.innerText.trim();
+             }
+          }
 
-        cards.forEach((card) => {
-          if (incremental && card.dataset.favExtracted) return;
-          const linkEl = card.querySelector('a[href*="/watch"], a[href*="/shorts"], a#video-title-link, a#thumbnail');
-          const imgEl = card.querySelector('img');
-
-          if (linkEl && linkEl.href) {
-            const cleanUrl = getCleanYouTubeUrl(linkEl.href);
-
-            if (cleanUrl && !seenUrls.has(cleanUrl)) {
-              seenUrls.add(cleanUrl);
-              const titleText = getYouTubeTitle(card);
-              card.dataset.favExtracted = 'true';
-
-              items.push({
-                url: cleanUrl,
-                platform: 'youtube',
-                content_type: cleanUrl.includes('/shorts/') ? 'video' : 'video',
-                title: titleText.slice(0, 120),
-                caption: titleText,
-                thumbnail_url: imgEl ? imgEl.src : undefined
-              });
+          if (titleText) {
+            seenUrls.add(cleanUrl);
+            linkEl.dataset.favExtracted = 'true';
+            
+            // Find thumbnail
+            let imgEl = linkEl.querySelector('img');
+            if (!imgEl) {
+               const parentCard = linkEl.closest('ytd-playlist-video-renderer, ytd-rich-item-renderer, ytd-video-renderer, yt-lockup-view-model') || linkEl.parentElement;
+               if (parentCard) imgEl = parentCard.querySelector('img');
             }
+
+            items.push({
+              url: cleanUrl,
+              platform: 'youtube',
+              content_type: cleanUrl.includes('/shorts/') ? 'video' : 'video',
+              title: titleText.slice(0, 120),
+              caption: titleText,
+              thumbnail_url: imgEl ? imgEl.src : undefined
+            });
           }
         });
       }
@@ -410,16 +419,7 @@ async function autoScrollAndExtract(maxScrolls = 250, scrollDelay = 1200, stopOn
   for (let i = 0; i < maxScrolls; i++) {
     if (!isAutoScrolling) break;
 
-    window.scrollBy(0, 2500);
-    window.scrollTo(0, document.body.scrollHeight);
-    const mainContainer = document.querySelector('div[role="main"]');
-    if (mainContainer) {
-      mainContainer.scrollBy(0, 2500);
-      mainContainer.scrollTop = mainContainer.scrollHeight;
-    }
-
-    await new Promise((r) => setTimeout(r, scrollDelay));
-
+    // 1. EXTRACT CURRENT DOM ITEMS FIRST (before any scrolling messes up the DOM or unloads items)
     const newItems = extractSavedContent(true);
 
     let foundExistingInThisStep = false;
@@ -435,13 +435,13 @@ async function autoScrollAndExtract(maxScrolls = 250, scrollDelay = 1200, stopOn
 
     if (pending.length >= STREAM_BATCH_SIZE) {
       await flush();
-      cleanupScrolledCards();
+      // Removed cleanupScrolledCards() because it collapses heights and breaks YouTube's SPA infinite scroll
     }
 
     // Memory guard: give the tab time to GC if the JS heap gets large
     const heap = performance.memory && performance.memory.usedJSHeapSize;
     if (heap && heap > HEAP_PAUSE_BYTES) {
-      cleanupScrolledCards();
+      // Removed cleanupScrolledCards() 
       await new Promise((r) => setTimeout(r, 5000));
     }
 
@@ -461,23 +461,34 @@ async function autoScrollAndExtract(maxScrolls = 250, scrollDelay = 1200, stopOn
       break;
     }
 
-    const currentHeight = Math.max(
-      document.body.scrollHeight,
-      document.documentElement.scrollHeight,
-      mainContainer ? mainContainer.scrollHeight : 0
-    );
+    // 2. SCROLLING: Find any element that is natively scrollable and push it down
+    window.scrollBy(0, 3000);
+    document.documentElement.scrollBy(0, 3000);
+    document.body.scrollBy(0, 3000);
+    
+    document.querySelectorAll('*').forEach(el => {
+      try {
+        if (el.scrollHeight > el.clientHeight) {
+          const style = window.getComputedStyle(el);
+          if (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflowY === 'overlay') {
+            el.scrollBy(0, 3000);
+          }
+        }
+      } catch (e) {}
+    });
 
-    if (currentHeight === previousHeight) {
+    // 3. WAIT FOR NETWORK TO LOAD NEW ITEMS
+    await new Promise((r) => setTimeout(r, scrollDelay));
+
+    if (newItems.length === 0) {
       noChangeCount++;
       if (noChangeCount >= 10) {
-        console.log('⚡ Auto-scroll reached absolute bottom of loaded content.');
+        console.log('⚡ Auto-scroll reached absolute bottom (no new items found for 10 steps).');
         break;
       }
     } else {
       noChangeCount = 0;
     }
-
-    previousHeight = currentHeight;
   }
 
   // Final flush (background already retries 3x per batch); one more pass here
@@ -532,3 +543,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
+} // end of window.focusFavoriteInjected check

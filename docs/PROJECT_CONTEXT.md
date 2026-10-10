@@ -16,13 +16,14 @@
 ## 2. Technical Stack ล่าสุด (ณ ปี 2026)
 - **Frontend / Backend:** Next.js 14 (App Router)
 - **Database:** Supabase (PostgreSQL + `pgvector`)
-- **Background Jobs:** Inngest (รันผ่าน `inngest dev` เพื่อข้ามข้อจำกัด Vercel Timeout)
+- **Deployment:** Hostinger VPS (Ubuntu) บริหารจัดการด้วย `pm2`
+- **Background Jobs:** Inngest (รันผ่าน `inngest dev` ร่วมกับ `pm2` เพื่อข้ามข้อจำกัด Serverless Timeout)
 - **AI / Machine Learning:**
   - **Categorization & Extraction:** Gemini API (`gemini-3.8-flash` เรียกผ่าน `@ai-sdk/google`)
   - **Embeddings:** Gemini API (`gemini-embedding-2` เวกเตอร์ 768-dim)
   - **Speech-to-Text:** OpenAI API (`whisper-1`)
 - **Tools:** 
-  - `yt-dlp` (ใช้ผ่าน `child_process.spawn` แทน `youtube-dl-exec` เพื่อคุม Resource และตั้ง Timeout)
+  - `yt-dlp` (ติดตั้งตรงบน VPS, ใช้ผ่าน `child_process.spawn`)
   - Google Maps Geocoding / Places API
 
 ---

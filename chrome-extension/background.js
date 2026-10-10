@@ -5,7 +5,7 @@
 // The extension origin (with host_permissions) is not, and keeps working even
 // if the popup is closed.
 
-const API_ENDPOINT = 'http://localhost:3000/api/ingest';
+const API_ENDPOINT = 'http://72.62.254.106:3000/api/ingest';
 const MAX_ATTEMPTS = 3;
 
 async function postWithRetry(items) {

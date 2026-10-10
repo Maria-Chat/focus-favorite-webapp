@@ -1,4 +1,4 @@
-const API_ENDPOINT = 'http://localhost:3000/api/ingest';
+const API_ENDPOINT = 'http://72.62.254.106:3000/api/ingest';
 
 async function sendScrapeMessage(tabId, action = 'SCRAPE_SAVED', maxScrolls = 250, stopOnExisting = false) {
   return new Promise((resolve) => {
@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!platform) return; // Not on a supported page
 
       log.innerText = `🔄 Syncing memory for ${platform}...`;
-      const res = await fetch(`http://localhost:3000/api/synced-urls?platform=${platform}`);
+      const res = await fetch(`http://72.62.254.106:3000/api/synced-urls?platform=${platform}`);
       if (res.ok) {
         const data = await res.json();
         await new Promise(r => chrome.storage.local.set({ syncedUrls: data.urls || [] }, r));
@@ -132,6 +132,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!res) {
       log.style.color = '#f87171';
       log.innerText = '⚠️ Please open YouTube, TikTok, or Facebook Saved page and refresh (F5).';
+      return;
+    }
+
+    if (res.error) {
+      log.style.color = '#f87171';
+      log.innerText = `❌ Error: ${res.error}`;
       return;
     }
 
