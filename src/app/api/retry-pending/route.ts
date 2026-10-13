@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { inngest } from '@/lib/inngest/client';
 
+// Prevent Next.js from statically prerendering this GET at build time
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     let allPending: any[] = [];

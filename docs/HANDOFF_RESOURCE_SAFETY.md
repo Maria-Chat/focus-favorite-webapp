@@ -95,3 +95,21 @@ npm run watchdog                        # เฝ้าดิสก์ (รัน
 curl localhost:3000/api/retry-pending   # re-queue pending ทั้งหมดเข้า Inngest (แก้บัก .order() กันข้อมูลซ้ำแล้ว)
 df -h / ; du -sh $TMPDIR ~/.npm/_logs   # เช็คพื้นที่
 ```
+
+## 6. VPS operations (อัปเดต 2026-10-13)
+- **VPS:** `root@72.62.254.106` เข้าด้วย SSH key ได้แล้ว (`~/.ssh/id_ed25519` บน Mac ของ Maria) โค้ดอยู่ที่ `/root/focus-favorite-webapp`
+- **pm2:** `focus-web` (Next.js :3000) + `focus-worker` (Inngest dev server :8288) → `pm2 list`, `pm2 logs focus-web --err --lines 100 --nostream`
+- ⚠️ log ของ Inngest/Next บน Mac เป็นของเครื่อง Local **ไม่ใช่ VPS** ต้องดูผ่าน SSH เท่านั้น
+- ⚠️ บรรทัด `llm 402` ใน log ของ focus-web ไม่มี timestamp ห้ามสรุปเวลาที่เกิดจากบรรทัดนี้ ให้ทดสอบ key จริงด้วย curl ก่อนสรุปว่าเครดิตหมด
+
+### เหตุการณ์ 2026-10-10: 1,093 ชิ้นค้างเป็น pending
+- Gemini ตอบ 402 ("prepayment credits are depleted") → `NonRetriableError` → run ถูกตัดจบ แต่ item ยังเป็น `pending` (ไม่ใช่ `error`) และไม่มีใครรันต่อ
+- ทดสอบ 2026-10-13 key เดียวกัน + `gemini-3.8-flash` ตอบปกติ และเครดิตแทบไม่ลด ยังไม่ทราบสาเหตุของ 402 แน่ชัด
+- **บั๊ก:** `GET /api/retry-pending` ถูก Next.js prerender ตอน build → ตอบ "No pending items found." ทุกครั้ง แก้ด้วย `export const dynamic = 'force-dynamic'` (ต้อง rebuild บน VPS ถึงมีผล)
+- **วิธีที่ใช้แทน:** `scripts/requeue_pending.mjs` ส่ง event ตรงเข้า Inngest:
+  ```bash
+  scp scripts/requeue_pending.mjs root@72.62.254.106:/root/focus-favorite-webapp/
+  ssh root@72.62.254.106 'cd /root/focus-favorite-webapp && node --env-file=.env.local requeue_pending.mjs'
+  ```
+- ความเร็วจริงประมาณ 6 ชิ้น/นาที (concurrency 1)
+- **อีกเรื่อง:** yt-dlp บน VPS โดน YouTube บล็อก ("Sign in to confirm you're not a bot") → ข้ามการดึงเสียง ต้องใส่ cookies ถ้าต้องการ transcript จากเสียง
