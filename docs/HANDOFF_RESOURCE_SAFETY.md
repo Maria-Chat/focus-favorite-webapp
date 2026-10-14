@@ -140,5 +140,4 @@ ssh root@72.62.254.106 'cd /root/focus-favorite-webapp && git pull && npm run bu
 - `09e57e8` current location: ลอง GPS แม่นยำ (8 วิ) ก่อน ถ้าไม่ได้ค่อย fallback ไปตำแหน่งจาก network (15 วิ) + ข้อความ error บอกสาเหตุจริง (ต้อง HTTPS / ไม่ได้ให้สิทธิ์ / หมดเวลา)
 - `dbe733f` `MapRecenter` เคยใช้ array เป็น dependency ของ effect → flyTo กลับไปที่หมุดที่เลือกทุกครั้งที่ re-render แก้แล้วโดยใช้ `lat`/`lng` เป็นตัวเลขแทน
 - `9665da1` search: ถ้าหมุดที่เลือกไม่อยู่ในผลค้นหา ให้เลือกผลแรกแทน, Enter ไปที่ผลแรก + ปิดคีย์บอร์ด, แสดงป้าย "N จุด"/"ไม่พบ"
-
-### งานถัดไป → ดู `docs/MAPVIEW_SEARCH_SPEC.md`
+- `fc6fe0f` search results UX (ตาม `docs/MAPVIEW_SEARCH_SPEC.md`): fitBounds ทุกจุดที่ค้นพบ, ปุ่ม "ดูทั้งหมด N จุด", สลับเป็นการ์ดขวาแบบเลื่อน (Desktop) / ปัดแนวนอน (Mobile), Two-way sync หมุดกับการ์ด, Progressive rendering โหลดทีละ 40+30 จุด
