@@ -312,8 +312,12 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
       } else {
         setSelectedPin(allLocations[0] || null);
       }
-    } else if (allLocations.length > 0 && !selectedPin) {
-      setSelectedPin(allLocations[0]);
+    } else if (allLocations.length > 0) {
+      // Keep the current pin if it still matches the search; otherwise jump to the first match
+      const stillVisible = selectedPin && allLocations.some(l =>
+        l.item === selectedPin.item && l.location.name === selectedPin.location.name
+      );
+      if (!stillVisible) setSelectedPin(allLocations[0]);
     }
   }, [targetLocation, allLocations]);
 
@@ -329,9 +333,21 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
             type="text"
             value={mapSearchQuery}
             onChange={(e) => setMapSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                if (allLocations[0]) setSelectedPin(allLocations[0]);
+                (e.target as HTMLInputElement).blur(); // close mobile keyboard
+              }
+            }}
+            enterKeyHint="search"
             placeholder="ค้นหาสถานที่ หรือคอนเทนต์เพื่อกรองพิกัดบนแผนที่..."
-            className="w-full pl-10 pr-4 py-2.5 bg-surface-dark/80 rounded-xl text-sm text-slate-100 placeholder-slate-400 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            className="w-full pl-10 pr-24 py-2.5 bg-surface-dark/80 rounded-xl text-sm text-slate-100 placeholder-slate-400 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
           />
+          {mapSearchQuery.trim() && (
+            <span className={`absolute right-3 top-2.5 text-xs px-2 py-0.5 rounded-full ${allLocations.length ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'}`}>
+              {allLocations.length ? `${allLocations.length} จุด` : 'ไม่พบ'}
+            </span>
+          )}
         </div>
       </div>
 
