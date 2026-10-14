@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { SavedItem, LocationItem } from '../types';
-import { MapPin, Navigation, Sparkles, ExternalLink, Edit3, X, Trash2, Plus, Search } from 'lucide-react';
+import { MapPin, Navigation, Sparkles, ExternalLink, Edit3, X, Trash2, Plus, Search, Maximize2 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -15,7 +15,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Create a custom active icon
+// Custom marker icons
 const activeIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
@@ -49,16 +49,34 @@ interface MapViewProps {
   onItemUpdate?: (updatedItem: SavedItem) => void;
 }
 
-// Helper component to recenter map when selected pin changes
-const MapRecenter = ({ center }: { center: [number, number] }) => {
+type LocationEntry = { location: LocationItem; item: SavedItem };
+
+const getLocationKey = (item: SavedItem, loc: LocationItem) =>
+  `${item.id}:${loc.name}:${loc.lat},${loc.lng}`;
+
+// Controller component to smoothly handle map viewport adjustments
+const MapController: React.FC<{
+  fitBoundsRequest: { bounds: L.LatLngBounds; id: number } | null;
+  flyToTarget: { lat: number; lng: number; id: number } | null;
+}> = ({ fitBoundsRequest, flyToTarget }) => {
   const map = useMap();
-  const [lat, lng] = center;
+  const lastFitBoundsId = useRef<number | null>(null);
+  const lastFlyToId = useRef<number | null>(null);
+
   useEffect(() => {
-    // Depend on the numbers, not the array: a new array is created on every
-    // parent render, which used to snap the map back here (e.g. right after
-    // "current location" flew elsewhere).
-    map.flyTo([lat, lng], 14, { animate: true });
-  }, [lat, lng, map]);
+    if (fitBoundsRequest && fitBoundsRequest.id !== lastFitBoundsId.current) {
+      lastFitBoundsId.current = fitBoundsRequest.id;
+      map.fitBounds(fitBoundsRequest.bounds, { padding: [50, 50], maxZoom: 15, animate: true });
+    }
+  }, [fitBoundsRequest, map]);
+
+  useEffect(() => {
+    if (flyToTarget && flyToTarget.id !== lastFlyToId.current) {
+      lastFlyToId.current = flyToTarget.id;
+      map.flyTo([flyToTarget.lat, flyToTarget.lng], 14, { animate: true });
+    }
+  }, [flyToTarget, map]);
+
   return null;
 };
 
@@ -74,7 +92,6 @@ const CurrentLocationControl = () => {
       const { latitude, longitude } = pos.coords;
       map.flyTo([latitude, longitude], 14, { animate: true });
 
-      // Add a temporary pulsing circle for current location
       const radius = pos.coords.accuracy || 100;
       L.circle([latitude, longitude], {
         radius: radius > 1000 ? 500 : radius,
@@ -102,12 +119,10 @@ const CurrentLocationControl = () => {
       setLocating(false);
     };
 
-    // 1st try: precise GPS (accept a fix up to 1 min old)
     navigator.geolocation.getCurrentPosition(
       onSuccess,
       (err) => {
         if (err.code === err.PERMISSION_DENIED) return onFinalError(err);
-        // 2nd try: network-based (WiFi/cell) location — faster indoors
         navigator.geolocation.getCurrentPosition(onSuccess, onFinalError, {
           enableHighAccuracy: false,
           timeout: 15000,
@@ -135,7 +150,24 @@ const CurrentLocationControl = () => {
 export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemUpdate }) => {
   const [isMounted, setIsMounted] = useState(false);
   const [mapSearchQuery, setMapSearchQuery] = useState('');
-  
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Map Navigation triggers
+  const [fitBoundsRequest, setFitBoundsRequest] = useState<{ bounds: L.LatLngBounds; id: number } | null>(null);
+  const [flyToTarget, setFlyToTarget] = useState<{ lat: number; lng: number; id: number } | null>(null);
+
+  // Progressive rendering for high-result queries
+  const [visibleCount, setVisibleCount] = useState(40);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // Card element refs for two-way scroll synchronization
+  const cardDesktopRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const cardMobileRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const isProgrammaticScrollRef = useRef(false);
+  const programmaticTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const mobileCardObserverRef = useRef<IntersectionObserver | null>(null);
+
   // Edit & Location State
   const [editingItem, setEditingItem] = useState<SavedItem | null>(null);
   const [editTags, setEditTags] = useState<string>('');
@@ -146,6 +178,202 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
   const [manualSearchQuery, setManualSearchQuery] = useState('');
   const [manualSearchResults, setManualSearchResults] = useState<any[]>([]);
   const [isSearchingManual, setIsSearchingManual] = useState(false);
+
+  // Debounce search query input (300ms)
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      setDebouncedSearchQuery(mapSearchQuery);
+    }, 300);
+
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, [mapSearchQuery]);
+
+  const isSearching = Boolean(debouncedSearchQuery.trim());
+
+  const handleClearSearch = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    setMapSearchQuery('');
+    setDebouncedSearchQuery('');
+  }, []);
+
+  const handleSearchSubmit = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    setDebouncedSearchQuery(mapSearchQuery);
+  }, [mapSearchQuery]);
+
+  // Extract filtered locations
+  const allLocations = useMemo(() => {
+    const locs: LocationEntry[] = [];
+    const q = debouncedSearchQuery.trim().toLowerCase();
+    const cleanQ = q.startsWith('#') ? q.slice(1) : q;
+    
+    const filteredItems = items.filter(item => {
+      if (!q) return true;
+      const matchTitle = item.original_title?.toLowerCase().includes(q) || false;
+      const matchCaption = item.original_caption?.toLowerCase().includes(q) || false;
+      const matchTags = item.tags?.some(t => t?.toLowerCase().includes(cleanQ)) || false;
+      const matchLocs = item.extracted_locations?.some(l => l.name?.toLowerCase().includes(q)) || false;
+      return matchTitle || matchCaption || matchTags || matchLocs;
+    });
+
+    filteredItems.forEach((item) => {
+      if (item.extracted_locations) {
+        item.extracted_locations.forEach((loc) => {
+          if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+            locs.push({ location: loc, item });
+          }
+        });
+      }
+    });
+    return locs;
+  }, [items, debouncedSearchQuery]);
+
+  const [selectedPin, setSelectedPin] = useState<LocationEntry | null>(null);
+
+  // Set programmatic scroll lock to prevent feedback loop
+  const triggerProgrammaticScroll = useCallback(() => {
+    isProgrammaticScrollRef.current = true;
+    if (programmaticTimerRef.current) clearTimeout(programmaticTimerRef.current);
+    programmaticTimerRef.current = setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, 700);
+  }, []);
+
+  // Ensure card element is within visible count if selecting beyond page
+  const ensurePinVisible = useCallback((entry: LocationEntry) => {
+    const index = allLocations.findIndex(
+      l => getLocationKey(l.item, l.location) === getLocationKey(entry.item, entry.location)
+    );
+    if (index >= visibleCount) {
+      setVisibleCount(Math.min(index + 20, allLocations.length));
+    }
+  }, [allLocations, visibleCount]);
+
+  // Scroll to card in desktop or mobile container
+  const scrollToCard = useCallback((key: string) => {
+    triggerProgrammaticScroll();
+    const desktopEl = cardDesktopRefs.current.get(key);
+    if (desktopEl) {
+      desktopEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    const mobileEl = cardMobileRefs.current.get(key);
+    if (mobileEl) {
+      mobileEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, [triggerProgrammaticScroll]);
+
+  // Marker click handler: selects pin, centers map, and scrolls card into view
+  const handleMarkerClick = useCallback((entry: LocationEntry) => {
+    setSelectedPin(entry);
+    setFlyToTarget({ lat: entry.location.lat, lng: entry.location.lng, id: Date.now() });
+    ensurePinVisible(entry);
+    setTimeout(() => {
+      scrollToCard(getLocationKey(entry.item, entry.location));
+    }, 60);
+  }, [ensurePinVisible, scrollToCard]);
+
+  // Card click handler: selects pin and flies map to it
+  const handleCardClick = useCallback((entry: LocationEntry) => {
+    setSelectedPin(entry);
+    setFlyToTarget({ lat: entry.location.lat, lng: entry.location.lng, id: Date.now() });
+    scrollToCard(getLocationKey(entry.item, entry.location));
+  }, [scrollToCard]);
+
+  // Fit all results handler
+  const handleFitAllResults = useCallback(() => {
+    if (allLocations.length === 0) return;
+    const validCoords = allLocations
+      .filter(l => typeof l.location.lat === 'number' && typeof l.location.lng === 'number')
+      .map(l => [l.location.lat, l.location.lng] as [number, number]);
+    if (validCoords.length > 0) {
+      const bounds = L.latLngBounds(validCoords);
+      setFitBoundsRequest({ bounds, id: Date.now() });
+    }
+  }, [allLocations]);
+
+  // Handle search query results change: fitBounds to all found points
+  useEffect(() => {
+    setVisibleCount(40);
+    if (isSearching && allLocations.length > 0) {
+      handleFitAllResults();
+    }
+  }, [isSearching, debouncedSearchQuery, handleFitAllResults]);
+
+  // Initial & Target location handling, maintaining selected pin on search clear
+  useEffect(() => {
+    if (targetLocation && allLocations.length > 0) {
+      const target = allLocations.find(l => 
+        Math.abs(Number(l.location.lat) - Number(targetLocation.lat)) < 0.0001 && 
+        Math.abs(Number(l.location.lng) - Number(targetLocation.lng)) < 0.0001
+      );
+      if (target) {
+        setSelectedPin(target);
+        setFlyToTarget({ lat: target.location.lat, lng: target.location.lng, id: Date.now() });
+      } else {
+        setSelectedPin(allLocations[0] || null);
+      }
+      return;
+    }
+
+    if (allLocations.length > 0) {
+      // Keep selected pin if still visible in current filter
+      const stillVisible = selectedPin && allLocations.some(l =>
+        getLocationKey(l.item, l.location) === getLocationKey(selectedPin.item, selectedPin.location)
+      );
+      if (!stillVisible) {
+        setSelectedPin(allLocations[0]);
+      }
+    }
+  }, [targetLocation, allLocations]);
+
+  // IntersectionObserver for mobile cards carousel swipe sync
+  useEffect(() => {
+    if (!isSearching) return;
+
+    mobileCardObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        if (isProgrammaticScrollRef.current) return;
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+            const key = entry.target.getAttribute('data-location-key');
+            if (key) {
+              const match = allLocations.find(l => getLocationKey(l.item, l.location) === key);
+              if (match && (!selectedPin || getLocationKey(selectedPin.item, selectedPin.location) !== key)) {
+                setSelectedPin(match);
+                setFlyToTarget({ lat: match.location.lat, lng: match.location.lng, id: Date.now() });
+              }
+            }
+            break;
+          }
+        }
+      },
+      { threshold: [0.6] }
+    );
+
+    return () => {
+      mobileCardObserverRef.current?.disconnect();
+    };
+  }, [isSearching, allLocations, selectedPin]);
+
+  // Progressive infinite loading sentinel for desktop & mobile card lists
+  useEffect(() => {
+    if (!loadMoreSentinelRef.current || !isSearching) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && visibleCount < allLocations.length) {
+          setVisibleCount(prev => Math.min(prev + 30, allLocations.length));
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(loadMoreSentinelRef.current);
+    return () => observer.disconnect();
+  }, [visibleCount, allLocations.length, isSearching]);
 
   const handleSaveEdit = async () => {
     if (!editingItem) return;
@@ -268,85 +496,155 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
     setIsMounted(true);
   }, []);
 
-  // Extract all locations into flat array paired with item context
-  const allLocations = React.useMemo(() => {
-    const locs: Array<{ location: LocationItem; item: SavedItem }> = [];
-    
-    // Filter items first
-    const filteredItems = items.filter(item => {
-      if (!mapSearchQuery.trim()) return true;
-      const q = mapSearchQuery.toLowerCase();
-      const cleanQ = q.startsWith('#') ? q.slice(1) : q;
-      
-      const matchTitle = item.original_title?.toLowerCase().includes(q) || false;
-      const matchCaption = item.original_caption?.toLowerCase().includes(q) || false;
-      const matchTags = item.tags?.some(t => t?.toLowerCase().includes(cleanQ)) || false;
-      const matchLocs = item.extracted_locations?.some(l => l.name?.toLowerCase().includes(q)) || false;
-      
-      return matchTitle || matchCaption || matchTags || matchLocs;
-    });
-
-    filteredItems.forEach((item) => {
-      if (item.extracted_locations) {
-        item.extracted_locations.forEach((loc) => {
-          if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
-            locs.push({ location: loc, item });
-          }
-        });
-      }
-    });
-    return locs;
-  }, [items, mapSearchQuery]);
-
-  const [selectedPin, setSelectedPin] = useState<{ location: LocationItem; item: SavedItem } | null>(null);
-
-  useEffect(() => {
-    if (targetLocation && allLocations.length > 0) {
-      // Find the exact pin using a small epsilon to avoid floating point mismatch
-      const target = allLocations.find(l => 
-        Math.abs(Number(l.location.lat) - Number(targetLocation.lat)) < 0.0001 && 
-        Math.abs(Number(l.location.lng) - Number(targetLocation.lng)) < 0.0001
-      );
-      if (target) {
-        setSelectedPin(target);
-      } else {
-        setSelectedPin(allLocations[0] || null);
-      }
-    } else if (allLocations.length > 0) {
-      // Keep the current pin if it still matches the search; otherwise jump to the first match
-      const stillVisible = selectedPin && allLocations.some(l =>
-        l.item === selectedPin.item && l.location.name === selectedPin.location.name
-      );
-      if (!stillVisible) setSelectedPin(allLocations[0]);
-    }
-  }, [targetLocation, allLocations]);
-
   if (!isMounted) return <div className="h-[520px] w-full bg-slate-900 rounded-2xl animate-pulse"></div>;
+
+  // Render full details card body
+  const renderCardDetail = (entry: LocationEntry, isFullStandalone: boolean = false) => {
+    const isMissingCoords = entry.location.place_id && (
+      entry.location.place_id.startsWith('dummy_') || 
+      entry.location.place_id === 'failed_geocoding' || 
+      entry.location.place_id === 'no_api_key'
+    );
+
+    return (
+      <div className={`space-y-4 ${isFullStandalone ? '' : 'p-4'}`}>
+        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+          <span className="text-xs font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2.5 py-0.5 rounded-full">
+            {entry.location.type || 'Location Detail'}
+          </span>
+          <span className="text-[10px] text-slate-500 font-mono">
+            {entry.location.lat.toFixed(4)}, {entry.location.lng.toFixed(4)}
+          </span>
+        </div>
+
+        <div>
+          <h3 className="text-base font-bold text-slate-100 mb-1 flex items-center space-x-2">
+            <span>{entry.location.name}</span>
+          </h3>
+          
+          {isMissingCoords ? (
+            <div className="mt-1.5 inline-flex items-center space-x-1.5 bg-orange-950/60 border border-orange-500/40 text-orange-400 text-[11px] px-2.5 py-1 rounded-md">
+              <span className="font-bold">⚠️ หาพิกัดไม่พบ:</span>
+              <span>กรุณาไปที่ Feed เพื่อแก้ไขพิกัด</span>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 leading-relaxed">
+              {entry.location.formatted_address || 'Bangkok, Thailand'}
+            </p>
+          )}
+        </div>
+
+        <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+          <div className="text-[11px] text-indigo-400 font-medium flex items-center space-x-1">
+            <Sparkles className="w-3 h-3" />
+            <span>ที่มาจากคอนเทนต์ที่คุณเซฟไว้:</span>
+          </div>
+          <h4 className="text-xs font-semibold text-slate-200 line-clamp-2">
+            {entry.item.original_title}
+          </h4>
+          <p className="text-[11px] text-slate-400 line-clamp-2">
+            {entry.item.original_caption}
+          </p>
+        </div>
+
+        <div className="pt-1 flex flex-col space-y-2">
+          <div className="flex space-x-2">
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(entry.location.name)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors shadow-lg shadow-emerald-600/20"
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              <span>เปิดใน Google Maps</span>
+            </a>
+            <a
+              href={entry.item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors shadow-lg shadow-indigo-600/20"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>ดูคลิปต้นฉบับ</span>
+            </a>
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditingItem(entry.item);
+              setEditTags(entry.item.tags?.join(', ') || '');
+              setEditCategory(entry.item.normalized_category || 'General Content');
+            }}
+            className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors border border-slate-700"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>แก้ไขข้อมูล / เพิ่มพิกัด</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Render a compact item card in search results
+  const renderCompactCard = (entry: LocationEntry) => {
+    return (
+      <div className="p-3 space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700/60">
+            {entry.location.type || 'Location'}
+          </span>
+          <span className="text-[10px] text-slate-500 font-mono">
+            {entry.location.lat.toFixed(2)}, {entry.location.lng.toFixed(2)}
+          </span>
+        </div>
+        <h4 className="text-sm font-bold text-slate-200 line-clamp-1 group-hover:text-emerald-300 transition-colors">
+          {entry.location.name}
+        </h4>
+        <p className="text-xs text-slate-400 line-clamp-1">
+          {entry.location.formatted_address || entry.item.original_title}
+        </p>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
       {/* Search Bar for Map */}
       <div className="glass-panel p-3 rounded-2xl border border-white/10 shadow-lg">
-        <div className="relative">
-          <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+        <div className="relative flex items-center">
+          <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
           <input
             type="text"
             value={mapSearchQuery}
             onChange={(e) => setMapSearchQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                if (allLocations[0]) setSelectedPin(allLocations[0]);
-                (e.target as HTMLInputElement).blur(); // close mobile keyboard
+                handleSearchSubmit();
+                (e.target as HTMLInputElement).blur();
               }
             }}
             enterKeyHint="search"
             placeholder="ค้นหาสถานที่ หรือคอนเทนต์เพื่อกรองพิกัดบนแผนที่..."
-            className="w-full pl-10 pr-24 py-2.5 bg-surface-dark/80 rounded-xl text-sm text-slate-100 placeholder-slate-400 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            className="w-full pl-10 pr-28 py-2.5 bg-surface-dark/80 rounded-xl text-sm text-slate-100 placeholder-slate-400 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
           />
           {mapSearchQuery.trim() && (
-            <span className={`absolute right-3 top-2.5 text-xs px-2 py-0.5 rounded-full ${allLocations.length ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'}`}>
-              {allLocations.length ? `${allLocations.length} จุด` : 'ไม่พบ'}
-            </span>
+            <div className="absolute right-2.5 flex items-center space-x-1.5">
+              <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
+                allLocations.length ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/15 text-rose-300 border border-rose-500/20'
+              }`}>
+                {allLocations.length ? `${allLocations.length} จุด` : 'ไม่พบ'}
+              </span>
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="p-1 text-slate-400 hover:text-white hover:bg-slate-700/60 rounded-full transition-colors"
+                title="ล้างการค้นหา"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -354,7 +652,7 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
       {/* Main Map Split Container */}
       <div className="flex flex-col lg:grid lg:grid-cols-3 gap-5 lg:h-[520px]">
         {/* Real Map Canvas */}
-        <div className="h-[300px] sm:h-[400px] lg:h-full lg:col-span-2 rounded-2xl border border-slate-800 relative overflow-hidden bg-slate-900 flex z-0 shrink-0">
+        <div className="h-[340px] sm:h-[420px] lg:h-full lg:col-span-2 rounded-2xl border border-slate-800 relative overflow-hidden bg-slate-900 flex z-0 shrink-0">
           <MapContainer 
             center={
               selectedPin
@@ -369,110 +667,203 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            {allLocations.map((entry, idx) => {
-              const isSelected = selectedPin?.location.name === entry.location.name;
-              const isMissingCoords = entry.location.place_id && (entry.location.place_id.startsWith('dummy_') || entry.location.place_id === 'failed_geocoding' || entry.location.place_id === 'no_api_key');
+            {allLocations.map((entry) => {
+              const locKey = getLocationKey(entry.item, entry.location);
+              const isSelected = selectedPin ? getLocationKey(selectedPin.item, selectedPin.location) === locKey : false;
+              const isMissingCoords = entry.location.place_id && (
+                entry.location.place_id.startsWith('dummy_') || 
+                entry.location.place_id === 'failed_geocoding' || 
+                entry.location.place_id === 'no_api_key'
+              );
               
-              // Only render marker if lat/lng are actual numbers
               if (typeof entry.location.lat !== 'number' || typeof entry.location.lng !== 'number') {
                 return null;
               }
               return (
                 <Marker
-                  key={idx}
+                  key={locKey}
                   position={[Number(entry.location.lat), Number(entry.location.lng)]}
                   icon={isSelected ? activeIcon : (isMissingCoords ? dummyIcon : defaultIcon)}
                   eventHandlers={{
-                    click: () => setSelectedPin(entry),
+                    click: () => handleMarkerClick(entry),
                   }}
                 />
               );
             })}
-            {selectedPin && <MapRecenter center={[selectedPin.location.lat, selectedPin.location.lng]} />}
+            
+            <MapController 
+              fitBoundsRequest={fitBoundsRequest} 
+              flyToTarget={flyToTarget} 
+            />
             <CurrentLocationControl />
           </MapContainer>
+
+          {/* Fit all results button in search mode */}
+          {isSearching && allLocations.length > 0 && (
+            <div className="absolute top-4 right-4 z-[400]">
+              <button
+                type="button"
+                onClick={handleFitAllResults}
+                className="bg-slate-900/90 hover:bg-slate-800 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 px-3.5 py-1.5 rounded-full text-xs font-semibold shadow-lg backdrop-blur-md flex items-center space-x-1.5 transition-all group"
+                title="ขยายแผนที่ให้เห็นทุกจุดที่ค้นพบ"
+              >
+                <Maximize2 className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                <span>ดูทั้งหมด {allLocations.length} จุด</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Selected Location Detail Info Drawer */}
-        <div className="glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4 relative z-10">
-          {selectedPin ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <span className="text-xs font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2.5 py-0.5 rounded-full">
-                  {selectedPin.location.type || 'Location Detail'}
+        {/* Right Panel / Desktop Details or Result List */}
+        <div className="hidden lg:flex flex-col h-full overflow-hidden">
+          {isSearching ? (
+            <div className="glass-card rounded-2xl border border-slate-800 flex flex-col h-full overflow-hidden">
+              {/* Header */}
+              <div className="p-3.5 border-b border-slate-800/80 bg-slate-900/70 flex items-center justify-between shrink-0">
+                <span className="text-xs font-semibold text-slate-300">
+                  {allLocations.length} ผลลัพธ์สำหรับ '{debouncedSearchQuery}'
                 </span>
-                <span className="text-[10px] text-slate-500 font-mono">
-                  {selectedPin.location.lat.toFixed(4)}, {selectedPin.location.lng.toFixed(4)}
+                <span className="text-[11px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2 py-0.5 rounded-full font-mono">
+                  {allLocations.length} จุด
                 </span>
               </div>
 
-              <div>
-                <h3 className="text-lg font-bold text-slate-100 mb-1 flex items-center space-x-2">
-                  <span>{selectedPin.location.name}</span>
-                </h3>
-                
-                {selectedPin.location.place_id && (selectedPin.location.place_id.startsWith('dummy_') || selectedPin.location.place_id === 'failed_geocoding' || selectedPin.location.place_id === 'no_api_key') ? (
-                  <div className="mt-2 inline-flex items-center space-x-1.5 bg-orange-950/60 border border-orange-500/40 text-orange-400 text-[11px] px-2.5 py-1 rounded-md">
-                    <span className="font-bold">⚠️ หาพิกัดไม่พบ:</span>
-                    <span>กรุณาไปที่ Feed เพื่อแก้ไขพิกัด</span>
+              {/* Cards List */}
+              {allLocations.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                  <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 border border-slate-700">
+                    <Search className="w-5 h-5" />
                   </div>
-                ) : (
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    {selectedPin.location.formatted_address || 'Bangkok, Thailand'}
+                  <p className="text-sm font-semibold text-slate-300">
+                    ไม่พบสถานที่ที่ตรงกับ '{debouncedSearchQuery}'
                   </p>
-                )}
-              </div>
-
-              <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-2">
-                <div className="text-[11px] text-indigo-400 font-medium flex items-center space-x-1">
-                  <Sparkles className="w-3 h-3" />
-                  <span>ที่มาจากคอนเทนต์ที่คุณเซฟไว้:</span>
-                </div>
-                <h4 className="text-xs font-semibold text-slate-200 line-clamp-2">
-                  {selectedPin.item.original_title}
-                </h4>
-                <p className="text-[11px] text-slate-400 line-clamp-3">
-                  {selectedPin.item.original_caption}
-                </p>
-              </div>
-
-              <div className="pt-2 flex flex-col space-y-2">
-                <div className="flex space-x-2">
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedPin.location.name)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-xl flex items-center justify-center space-x-2 transition-colors shadow-lg shadow-emerald-600/20"
+                  <button
+                    onClick={handleClearSearch}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl border border-slate-700 transition-colors flex items-center space-x-1"
                   >
-                    <Navigation className="w-3.5 h-3.5" />
-                    <span>เปิดในgoogle map</span>
-                  </a>
-                  <a
-                    href={selectedPin.item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-xl flex items-center justify-center space-x-2 transition-colors shadow-lg shadow-indigo-600/20"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>ดูคลิปต้นฉบับ</span>
-                  </a>
+                    <X className="w-3.5 h-3.5" />
+                    <span>ล้างการค้นหา</span>
+                  </button>
                 </div>
-                <button
-                  onClick={() => {
-                    setEditingItem(selectedPin.item);
-                    setEditTags(selectedPin.item.tags?.join(', ') || '');
-                    setEditCategory(selectedPin.item.normalized_category || 'General Content');
-                  }}
-                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs rounded-xl flex items-center justify-center space-x-2 transition-colors border border-slate-700"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>แก้ไขข้อมูล / เพิ่มพิกัด</span>
-                </button>
-              </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+                  {allLocations.slice(0, visibleCount).map((entry) => {
+                    const key = getLocationKey(entry.item, entry.location);
+                    const isSelected = selectedPin ? getLocationKey(selectedPin.item, selectedPin.location) === key : false;
+
+                    return (
+                      <div
+                        key={key}
+                        ref={(el) => {
+                          if (el) cardDesktopRefs.current.set(key, el);
+                          else cardDesktopRefs.current.delete(key);
+                        }}
+                        onClick={() => handleCardClick(entry)}
+                        className={`rounded-xl transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-slate-800/95 ring-2 ring-emerald-500/80 border border-emerald-500/50 shadow-lg shadow-emerald-950/30'
+                            : 'bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        {isSelected ? renderCardDetail(entry) : renderCompactCard(entry)}
+                      </div>
+                    );
+                  })}
+                  {visibleCount < allLocations.length && (
+                    <div ref={loadMoreSentinelRef} className="py-2 text-center text-xs text-slate-500 animate-pulse">
+                      กำลังโหลดรายการเพิ่มเติม...
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
-            <div className="text-center py-20 text-slate-500 text-xs">
-              เลือกหมุดบนแผนที่เพื่อดูรายละเอียดและโพสต์ต้นทาง
+            /* Normal Mode: Single Card Drawer */
+            <div className="glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4 h-full relative z-10 overflow-y-auto custom-scrollbar">
+              {selectedPin ? (
+                renderCardDetail(selectedPin, true)
+              ) : (
+                <div className="text-center py-20 text-slate-500 text-xs">
+                  เลือกหมุดบนแผนที่เพื่อดูรายละเอียดและโพสต์ต้นทาง
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Mobile View: Rendered Below Map */}
+        <div className="lg:hidden flex flex-col space-y-3">
+          {isSearching ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-semibold text-slate-300">
+                  {allLocations.length} ผลลัพธ์สำหรับ '{debouncedSearchQuery}'
+                </span>
+                <span className="text-[11px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2 py-0.5 rounded-full font-mono">
+                  {allLocations.length} จุด
+                </span>
+              </div>
+
+              {allLocations.length === 0 ? (
+                <div className="glass-card rounded-2xl p-6 text-center space-y-3 border border-slate-800">
+                  <p className="text-sm font-semibold text-slate-300">
+                    ไม่พบสถานที่ที่ตรงกับ '{debouncedSearchQuery}'
+                  </p>
+                  <button
+                    onClick={handleClearSearch}
+                    className="mx-auto px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl border border-slate-700 transition-colors flex items-center space-x-1.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>ล้างการค้นหา</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex overflow-x-auto snap-x snap-mandatory space-x-3 pb-3 custom-scrollbar -mx-4 px-4">
+                  {allLocations.slice(0, visibleCount).map((entry) => {
+                    const key = getLocationKey(entry.item, entry.location);
+                    const isSelected = selectedPin ? getLocationKey(selectedPin.item, selectedPin.location) === key : false;
+
+                    return (
+                      <div
+                        key={key}
+                        ref={(el) => {
+                          if (el) {
+                            cardMobileRefs.current.set(key, el);
+                            mobileCardObserverRef.current?.observe(el);
+                          } else {
+                            cardMobileRefs.current.delete(key);
+                          }
+                        }}
+                        data-location-key={key}
+                        onClick={() => handleCardClick(entry)}
+                        className={`w-[85vw] max-w-sm shrink-0 snap-center rounded-2xl transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-slate-800/95 ring-2 ring-emerald-500/80 border border-emerald-500/50 shadow-xl shadow-emerald-950/30'
+                            : 'bg-slate-900/80 border border-slate-800'
+                        }`}
+                      >
+                        {isSelected ? renderCardDetail(entry) : renderCompactCard(entry)}
+                      </div>
+                    );
+                  })}
+                  {visibleCount < allLocations.length && (
+                    <div ref={loadMoreSentinelRef} className="shrink-0 w-24 flex items-center justify-center text-xs text-slate-500">
+                      โหลดเพิ่ม...
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Normal Mode: Single Card Drawer on Mobile */
+            <div className="glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4">
+              {selectedPin ? (
+                renderCardDetail(selectedPin, true)
+              ) : (
+                <div className="text-center py-10 text-slate-500 text-xs">
+                  เลือกหมุดบนแผนที่เพื่อดูรายละเอียดและโพสต์ต้นทาง
+                </div>
+              )}
             </div>
           )}
         </div>
