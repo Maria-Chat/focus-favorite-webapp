@@ -66,28 +66,51 @@ const CurrentLocationControl = () => {
     e.stopPropagation();
     e.preventDefault();
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        map.flyTo([latitude, longitude], 14, { animate: true });
-        
-        // Add a temporary pulsing circle for current location
-        const radius = pos.coords.accuracy || 100;
-        L.circle([latitude, longitude], {
-          radius: radius > 1000 ? 500 : radius,
-          color: '#6366f1',
-          fillColor: '#818cf8',
-          fillOpacity: 0.2,
-          weight: 2
-        }).addTo(map);
+    const onSuccess = (pos: GeolocationPosition) => {
+      const { latitude, longitude } = pos.coords;
+      map.flyTo([latitude, longitude], 14, { animate: true });
 
-        setLocating(false);
-      },
+      // Add a temporary pulsing circle for current location
+      const radius = pos.coords.accuracy || 100;
+      L.circle([latitude, longitude], {
+        radius: radius > 1000 ? 500 : radius,
+        color: '#6366f1',
+        fillColor: '#818cf8',
+        fillOpacity: 0.2,
+        weight: 2
+      }).addTo(map);
+
+      setLocating(false);
+    };
+
+    const onFinalError = (err: GeolocationPositionError) => {
+      let msg = 'ไม่สามารถดึงตำแหน่งปัจจุบันได้';
+      if (!window.isSecureContext) {
+        msg += ' — เบราว์เซอร์อนุญาต Location เฉพาะเว็บ HTTPS กรุณาเปิดผ่านลิงก์ https://';
+      } else if (err.code === err.PERMISSION_DENIED) {
+        msg += ' — กรุณาอนุญาตสิทธิ์ Location ให้เว็บนี้ในเบราว์เซอร์';
+      } else if (err.code === err.TIMEOUT) {
+        msg += ' — หาตำแหน่งไม่ทันเวลา ลองใหม่อีกครั้ง (หรือออกไปที่โล่ง/เปิด WiFi)';
+      } else {
+        msg += ' — กรุณาเปิด GPS/Location ในเครื่อง';
+      }
+      alert(msg);
+      setLocating(false);
+    };
+
+    // 1st try: precise GPS (accept a fix up to 1 min old)
+    navigator.geolocation.getCurrentPosition(
+      onSuccess,
       (err) => {
-        alert('ไม่สามารถดึงตำแหน่งปัจจุบันได้ กรุณาเปิดสิทธิ์ Location');
-        setLocating(false);
+        if (err.code === err.PERMISSION_DENIED) return onFinalError(err);
+        // 2nd try: network-based (WiFi/cell) location — faster indoors
+        navigator.geolocation.getCurrentPosition(onSuccess, onFinalError, {
+          enableHighAccuracy: false,
+          timeout: 15000,
+          maximumAge: 5 * 60 * 1000,
+        });
       },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60 * 1000 }
     );
   };
 
