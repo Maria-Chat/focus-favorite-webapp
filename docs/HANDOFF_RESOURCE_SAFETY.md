@@ -113,3 +113,32 @@ df -h / ; du -sh $TMPDIR ~/.npm/_logs   # เช็คพื้นที่
   ```
 - ความเร็วจริงประมาณ 6 ชิ้น/นาที (concurrency 1)
 - **อีกเรื่อง:** yt-dlp บน VPS โดน YouTube บล็อก ("Sign in to confirm you're not a bot") → ข้ามการดึงเสียง ต้องใส่ cookies ถ้าต้องการ transcript จากเสียง
+
+## 7. อัปเดต 2026-10-14 — HTTPS, deploy, Map View
+### สถานะคิว
+- ประมวลผลครบแล้ว: completed 10,343 / pending 0 / error 0
+
+### HTTPS (จำเป็นสำหรับ geolocation บนมือถือ)
+- URL หลัก: **https://72-62-254-106.sslip.io** (ส่วน `http://72.62.254.106:3000` ยังใช้ได้ และ Chrome extension ยังส่งไปที่ URL เดิม)
+- ใช้ Nginx Proxy Manager container `npm` ที่มีอยู่แล้ว แต่**ไม่ได้ตั้งผ่าน UI** → config เขียนมือที่ `/root/npm/data/nginx/custom/http.conf` (ใน container คือ `/data/nginx/custom/http.conf`)
+  - port 80: ACME challenge + redirect ไป https
+  - port 443: proxy ไป `http://172.18.0.1:3000` (gateway ของ docker network `proxy`)
+- Cert: Let's Encrypt ชื่อ `focus-sslip` อยู่ใน `/root/npm/letsencrypt/live/focus-sslip/`
+- ต่ออายุ: cron บน host `17 3 * * * docker exec npm certbot renew --cert-name focus-sslip ...` ⚠️ **ยังไม่ได้ยืนยัน** เพราะตอนทดสอบ `--dry-run` ค้างจนต้องยกเลิก ต้องตรวจสอบก่อนหมดอายุ (~2027-01-12)
+- หลังแก้ config ต้องรัน: `docker exec npm nginx -t && docker exec npm nginx -s reload`
+
+### Deploy (โค้ดบน VPS ตรงกับ GitHub `master` แล้ว)
+```bash
+git push
+ssh root@72.62.254.106 'cd /root/focus-favorite-webapp && git pull && npm run build && pm2 restart focus-web'
+```
+- ระหว่าง build + restart เว็บจะดับประมาณ 1–2 นาที ถ้ามีงานค้างในคิวให้รอจนเสร็จก่อน
+- ไม่ต้องรีสตาร์ท `focus-worker` (Inngest dev server) ยกเว้นแก้ config ของ Inngest
+- บน VPS มีไฟล์ scratch ที่ถูกลบไว้ (`git status` ขึ้น D) ไม่กระทบการ pull
+
+### Map View fixes (`src/components/MapView.tsx`) — deploy แล้ว
+- `09e57e8` current location: ลอง GPS แม่นยำ (8 วิ) ก่อน ถ้าไม่ได้ค่อย fallback ไปตำแหน่งจาก network (15 วิ) + ข้อความ error บอกสาเหตุจริง (ต้อง HTTPS / ไม่ได้ให้สิทธิ์ / หมดเวลา)
+- `dbe733f` `MapRecenter` เคยใช้ array เป็น dependency ของ effect → flyTo กลับไปที่หมุดที่เลือกทุกครั้งที่ re-render แก้แล้วโดยใช้ `lat`/`lng` เป็นตัวเลขแทน
+- `9665da1` search: ถ้าหมุดที่เลือกไม่อยู่ในผลค้นหา ให้เลือกผลแรกแทน, Enter ไปที่ผลแรก + ปิดคีย์บอร์ด, แสดงป้าย "N จุด"/"ไม่พบ"
+
+### งานถัดไป → ดู `docs/MAPVIEW_SEARCH_SPEC.md`
