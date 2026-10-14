@@ -250,6 +250,19 @@ export const processSavedItem = inngest.createFunction(
        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
        
        return await Promise.all((aiExtracted.places || []).map(async (p: any) => {
+         const nameTrimmed = (p.name || '').trim();
+         // Never send placeholder or unknown names to Google Places API (prevents fuzzy search hallucinations like 'ส่วนที่แคบที่สุดในประเทศไทย')
+         if (!nameTrimmed || nameTrimmed === 'ไม่พบชื่อสถานที่' || p.type === 'Unknown' || nameTrimmed.toLowerCase() === 'unknown') {
+           return {
+             ...p,
+             name: 'ไม่พบชื่อสถานที่',
+             type: 'Unknown',
+             lat: null,
+             lng: null,
+             place_id: "failed_geocoding"
+           };
+         }
+
          if (!apiKey) {
            return { ...p, lat: null, lng: null, place_id: "no_api_key" };
          }

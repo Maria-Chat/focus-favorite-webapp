@@ -40,3 +40,28 @@
   ```
 - **การเช็คจุดสิ้นสุด:** ให้เช็คจาก **"จำนวนข้อมูลใหม่ที่ดึงได้ (New Items Extracted)"** ถ้าเจอ 0 ชิ้นติดต่อกัน 10 ครั้ง แปลว่าถึงก้นบึ้งของหน้าเว็บแล้วจริงๆ
 - **ตัวเลือก Selector:** YouTube ทำการอัปเดตสถาปัตยกรรมเป็น WebComponents บ่อยมาก (ล่าสุดใช้ `yt-lockup-view-model` และ `.ytLockupMetadataViewModelTitle`) การดึงข้อมูลควรใช้ Selector ที่ยืดหยุ่น เช่น `a[href*="/watch"]` เป็นหลัก แล้วจึงค่อยเดินหา Parent Node ด้วย `closest('yt-lockup-view-model, ytd-playlist-video-renderer')` เพื่อดึงรูปปก
+
+---
+
+## 3. การ Geocoding สถานที่ที่เป็น Placeholder (Placeholder Geocoding Hallucination)
+
+**⚠️ ข้อห้าม (DO NOT):**
+- **ห้าม** นำชื่อสถานที่ที่เป็น Placeholder เช่น `"ไม่พบชื่อสถานที่"`, `"Unknown"`, หรือค่าว่าง ไปยิงค้นหากับ Google Places API / Google Maps Geocoding API เด็ดขาด
+- สาเหตุ: Google Places API ใช้ระบบ Fuzzy Semantic Search หากส่ง `"ไม่พบชื่อสถานที่ Thailand"` ไปค้นหา Google จะไม่ตอบว่าไม่พบ แต่จะสุ่มหยิบแลนด์มาร์ก/สถานที่ท่องเที่ยวสำคัญมาแทน (เช่น *"ส่วนที่แคบที่สุดในประเทศไทย"*, *"วนอุทยานพนมสวาย"*, *"หลักเขตชายแดนไทย-มาเลเซีย"*) และนำพิกัดจริงของจุดนั้นมาบันทึกทับคลิปอาหาร/คลิปทั่วไป ทำให้หมุดไปโผล่ผิดที่นับร้อยรายการ
+
+**✅ วิธีที่ถูกต้อง (The Right Way):**
+- ใน `src/lib/inngest/functions.ts` และสคริปต์ Geocoding ทุกตัว ต้องมี Guardrail ดักก่อนเสมอ:
+  ```typescript
+  const nameTrimmed = (p.name || '').trim();
+  if (!nameTrimmed || nameTrimmed === 'ไม่พบชื่อสถานที่' || p.type === 'Unknown' || nameTrimmed.toLowerCase() === 'unknown') {
+    return {
+      ...p,
+      name: 'ไม่พบชื่อสถานที่',
+      type: 'Unknown',
+      lat: null,
+      lng: null,
+      place_id: 'failed_geocoding'
+    };
+  }
+  ```
+- หากเป็น Placeholder ให้ข้ามการยิง API ทันที และคืนค่า `lat: null, lng: null` เพื่อให้ UI จัดการแสดงผลเป็น "⚠️ หาพิกัดไม่พบ" แทนการปักหมุดมั่ว

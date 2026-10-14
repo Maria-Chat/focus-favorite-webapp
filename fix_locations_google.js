@@ -16,6 +16,14 @@ if (!googleApiKey) {
 }
 
 async function geocodeGoogle(name) {
+  const nameTrimmed = (name || '').trim();
+  if (!nameTrimmed || nameTrimmed === 'ไม่พบชื่อสถานที่' || nameTrimmed.toLowerCase() === 'unknown') {
+    return {
+      lat: null,
+      lng: null,
+      place_id: "failed_geocoding"
+    };
+  }
   try {
     const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(name + ' Thailand')}&key=${googleApiKey}`);
     const data = await res.json();
