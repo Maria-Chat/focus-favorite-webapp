@@ -52,9 +52,13 @@ interface MapViewProps {
 // Helper component to recenter map when selected pin changes
 const MapRecenter = ({ center }: { center: [number, number] }) => {
   const map = useMap();
+  const [lat, lng] = center;
   useEffect(() => {
-    map.flyTo(center, 14, { animate: true });
-  }, [center, map]);
+    // Depend on the numbers, not the array: a new array is created on every
+    // parent render, which used to snap the map back here (e.g. right after
+    // "current location" flew elsewhere).
+    map.flyTo([lat, lng], 14, { animate: true });
+  }, [lat, lng, map]);
   return null;
 };
 
