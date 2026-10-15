@@ -55,52 +55,6 @@ export type LocationClusterEntry = {
   items: SavedItem[];
 };
 
-// Create custom pin with badge counter for locations with multiple items
-const createClusterIcon = (count: number, isSelected: boolean, isMissingCoords: boolean) => {
-  if (count <= 1) {
-    if (isSelected) return activeIcon;
-    if (isMissingCoords) return dummyIcon;
-    return defaultIcon;
-  }
-
-  const pinBg = isSelected ? '#10b981' : '#3b82f6';
-  const badgeBg = '#f43f5e';
-  const badgeText = count > 99 ? '99+' : count.toString();
-
-  const html = `
-    <div style="position: relative; width: 34px; height: 44px; display: flex; align-items: center; justify-content: center;">
-      <svg width="34" height="44" viewBox="0 0 34 44" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0px 3px 6px rgba(0,0,0,0.5));">
-        <path d="M17 0C7.61 0 0 7.61 0 17C0 27.5 17 44 17 44C17 44 34 27.5 34 17C34 7.61 26.39 0 17 0Z" fill="${pinBg}"/>
-        <circle cx="17" cy="16" r="7" fill="white" fill-opacity="0.95"/>
-      </svg>
-      <span style="
-        position: absolute;
-        top: -4px;
-        right: -6px;
-        background: ${badgeBg};
-        color: white;
-        font-family: system-ui, -apple-system, sans-serif;
-        font-size: 11px;
-        font-weight: 700;
-        line-height: 1;
-        padding: 3px 6px;
-        border-radius: 9999px;
-        border: 2px solid #ffffff;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.35);
-      ">
-        ${badgeText}
-      </span>
-    </div>
-  `;
-
-  return L.divIcon({
-    html,
-    className: 'custom-cluster-marker',
-    iconSize: [34, 44],
-    iconAnchor: [17, 44],
-    popupAnchor: [0, -40]
-  });
-};
 
 // Controller component to smoothly handle map viewport adjustments
 const MapController: React.FC<{
@@ -889,7 +843,9 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
                 return null;
               }
 
-              const markerIcon = createClusterIcon(entry.items.length, isSelected, Boolean(isMissingCoords));
+              const markerIcon = isSelected 
+                ? activeIcon 
+                : (isMissingCoords ? dummyIcon : defaultIcon);
 
               return (
                 <Marker
