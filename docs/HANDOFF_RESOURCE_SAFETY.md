@@ -141,3 +141,4 @@ ssh root@72.62.254.106 'cd /root/focus-favorite-webapp && git pull && npm run bu
 - `dbe733f` `MapRecenter` เคยใช้ array เป็น dependency ของ effect → flyTo กลับไปที่หมุดที่เลือกทุกครั้งที่ re-render แก้แล้วโดยใช้ `lat`/`lng` เป็นตัวเลขแทน
 - `9665da1` search: ถ้าหมุดที่เลือกไม่อยู่ในผลค้นหา ให้เลือกผลแรกแทน, Enter ไปที่ผลแรก + ปิดคีย์บอร์ด, แสดงป้าย "N จุด"/"ไม่พบ"
 - `fc6fe0f` search results UX (ตาม `docs/MAPVIEW_SEARCH_SPEC.md`): fitBounds ทุกจุดที่ค้นพบ, ปุ่ม "ดูทั้งหมด N จุด", สลับเป็นการ์ดขวาแบบเลื่อน (Desktop) / ปัดแนวนอน (Mobile), Two-way sync หมุดกับการ์ด, Progressive rendering โหลดทีละ 40+30 จุด
+- `f411550` auto-locate on open & zero-jump: เปิดแท็บ Map View แล้วเรียกหาพิกัด GPS ทันที ไม่ force เลือก `allLocations[0]`, จำพิกัดล่าสุดใน `sessionStorage`, แสดง Marker แบบจุดฟ้าขอบขาวคู่รัศมี, และรีเซ็ต `targetMapLocation` เมื่อคลิกแท็บ Map จาก Navbar
