@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Map View Multi-Items UX Mockup — Focus Favorite</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Prompt', sans-serif;
+      background-color: #0b0f19;
+      color: #f1f5f9;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+  </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8 flex flex-col items-center">
+
+  <!-- Header Controls -->
+  <header class="w-full max-w-5xl mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+    <div>
+      <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold mb-2">
+        <span>✨ Interactive UX/UI Prototype</span>
+      </div>
+      <h1 class="text-2xl font-bold text-white tracking-tight">
+        กรณี 1 พิกัด มีหลายคอนเทนต์ที่บันทึกไว้
+      </h1>
+      <p class="text-xs text-slate-400 mt-1">
+        คลิกสลับโหมดด้านขวาเพื่อดูความแตกต่างระหว่าง <b class="text-slate-200">แบบ Feed List</b> กับ <b class="text-slate-200">แบบ Tab Carousel</b>
+      </p>
+    </div>
+
+    <!-- Toggle Concept Mode -->
+    <div class="bg-slate-900 p-1.5 rounded-xl border border-slate-800 flex items-center space-x-1">
+      <button id="btn-mode-list" onclick="setMode('list')" class="px-4 py-2 rounded-lg text-xs font-semibold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/30">
+        แบบที่ 1: Vertical List (แนะนำ)
+      </button>
+      <button id="btn-mode-tab" onclick="setMode('tab')" class="px-4 py-2 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white">
+        แบบที่ 2: Tab Carousel
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Showcase Container -->
+  <main class="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Left: Interactive Simulated Map (2 Cols) -->
+    <div class="lg:col-span-2 h-[480px] rounded-2xl border border-slate-800 relative overflow-hidden bg-slate-950 flex flex-col justify-between p-5 shadow-2xl">
+      <!-- Fake Map Tiles Background -->
+      <div class="absolute inset-0 opacity-25 pointer-events-none" style="background-image: radial-gradient(#334155 1.5px, transparent 1.5px), radial-gradient(#334155 1.5px, #0b0f19 1.5px); background-size: 30px 30px; background-position: 0 0, 15px 15px;"></div>
+      
+      <!-- Map Road Lines Simulation -->
+      <svg class="absolute inset-0 w-full h-full opacity-20 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M-50,200 L400,220 L600,100 L900,150" stroke="#64748b" stroke-width="8" fill="none" />
+        <path d="M250,-50 L260,350 L400,600" stroke="#64748b" stroke-width="12" fill="none" />
+        <path d="M500,600 L480,200 L700,-50" stroke="#475569" stroke-width="6" fill="none" />
+      </svg>
+
+      <!-- Map Search Bar Simulation -->
+      <div class="relative z-10 w-full max-w-sm bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl px-3.5 py-2 flex items-center space-x-2 text-xs text-slate-300 shadow-lg">
+        <span class="text-slate-400">🔍</span>
+        <input type="text" value="บรรทัดทอง" readonly class="bg-transparent text-slate-200 outline-none flex-1 text-xs font-medium cursor-default">
+        <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-mono text-[11px]">3 คลิป</span>
+      </div>
+
+      <!-- Center Marker: Hotspot Multi-Pin with Badge -->
+      <div class="absolute top-[48%] left-[45%] -translate-x-1/2 -translate-y-1/2 z-20 cursor-pointer group flex flex-col items-center">
+        <!-- Pin Animation Ripple -->
+        <div class="absolute -inset-3 rounded-full bg-indigo-500/25 animate-ping opacity-75"></div>
+        <div class="absolute -inset-1.5 rounded-full bg-indigo-600/30"></div>
+        
+        <!-- Main Marker Pin -->
+        <div class="relative w-11 h-11 bg-gradient-to-tr from-emerald-600 to-teal-400 rounded-full border-2 border-white shadow-xl flex items-center justify-center text-white transform group-hover:scale-110 transition-transform">
+          <span class="text-lg">📍</span>
+          <!-- Multi-item Counter Badge -->
+          <span class="absolute -top-1.5 -right-2 bg-gradient-to-r from-pink-500 to-rose-600 text-white font-bold text-[11px] px-2 py-0.5 rounded-full shadow-lg border border-white/60 animate-bounce">
+            3
+          </span>
+        </div>
+
+        <!-- Venue Label Pill -->
+        <div class="mt-2 bg-slate-900/95 border border-slate-700/90 text-white text-[11px] font-semibold px-3 py-1 rounded-full shadow-2xl flex items-center space-x-1.5 backdrop-blur-md">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span>ร้านเจ๊โอว (บรรทัดทอง)</span>
+        </div>
+      </div>
+
+      <!-- Single Pin nearby for contrast -->
+      <div class="absolute top-[25%] left-[75%] z-10 opacity-70 hover:opacity-100 transition-opacity cursor-pointer flex flex-col items-center">
+        <div class="w-8 h-8 bg-blue-600 rounded-full border border-white flex items-center justify-center text-sm shadow-md">
+          📍
+        </div>
+        <div class="mt-1 bg-slate-900/80 text-[10px] text-slate-300 px-2 py-0.5 rounded-md">
+          หนึ่ง นมนัว (1 คลิป)
+        </div>
+      </div>
+
+      <!-- Map Footer Controls -->
+      <div class="relative z-10 flex items-center justify-between text-[11px] text-slate-500">
+        <div class="bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-800">
+          📍 พิกัด: 13.7426, 100.5228
+        </div>
+        <div class="bg-indigo-600 text-white p-2 rounded-full shadow-lg">
+          🎯 ปัจจุบัน
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Multi-Item Detail Panel (1 Col) -->
+    <div class="glass-card h-[480px] rounded-2xl flex flex-col overflow-hidden shadow-2xl relative">
+      
+      <!-- 1. Header (Shared Place Information) -->
+      <div class="p-4 border-b border-slate-800 bg-slate-900/80 shrink-0 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-semibold text-emerald-400 bg-emerald-950/70 border border-emerald-800/60 px-2.5 py-0.5 rounded-full flex items-center space-x-1">
+            <span>รวม 3 คอนเทนต์ในที่นี่</span>
+          </span>
+          <span class="text-[10px] text-slate-400 font-mono">13.7426, 100.5228</span>
+        </div>
+        
+        <div>
+          <h2 class="text-base font-bold text-white flex items-center space-x-1.5">
+            <span>ร้านเจ๊โอว ข้าวต้มเป็ด</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">
+            ซอยจุฬาลงกรณ์ 16 ถนนบรรทัดทอง แขวงรองเมือง เขตปทุมวัน กรุงเทพฯ
+          </p>
+        </div>
+
+        <a href="https://maps.google.com" target="_blank" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors shadow-md shadow-emerald-950">
+          <span>🧭 เปิดนำทางใน Google Maps</span>
+        </a>
+      </div>
+
+      <!-- 2A. MODE: VERTICAL LIST (Default) -->
+      <div id="view-mode-list" class="flex-1 overflow-y-auto p-3 space-y-3 custom-scroll">
+        <p class="text-[11px] font-medium text-slate-400 px-1 flex items-center space-x-1">
+          <span>🎬 คลิปที่คุณเซฟไว้ทั้งหมด:</span>
+        </p>
+
+        <!-- Card 1 (TikTok) -->
+        <div class="bg-slate-900/90 hover:bg-slate-850 p-3 rounded-xl border border-slate-800 hover:border-slate-700 transition-all space-y-2 group">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-black text-pink-400 border border-pink-500/30 flex items-center space-x-1">
+              <span>🎵 TikTok</span>
+            </span>
+            <span class="text-[10px] text-slate-400">@foodie_bkk · เซฟเมื่อ 2 สัปดาห์ก่อน</span>
+          </div>
+          <h3 class="text-xs font-semibold text-slate-200 line-clamp-2 group-hover:text-emerald-300 transition-colors">
+            มาม่าต้มยำทะเลรวมมิตรเดือดรอบดึก! หมูกรอบโคตรฟิน สั่งจานยักษ์กิน 4 คนแทบไม่หมด
+          </h3>
+          <p class="text-[11px] text-slate-400 line-clamp-2">
+            แคปชั่น: อย่าลืมสั่งยำแซลมอนนะทุกคน แซ่บมาก แนะนำให้ไปกดบัตรคิวก่อน 2 ทุ่ม...
+          </p>
+          <div class="pt-1 flex items-center space-x-2">
+            <a href="#" class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-medium rounded-lg text-center border border-slate-700">
+              ▶️ ดูคลิป TikTok
+            </a>
+          </div>
+        </div>
+
+        <!-- Card 2 (YouTube) -->
+        <div class="bg-slate-900/90 hover:bg-slate-850 p-3 rounded-xl border border-slate-800 hover:border-slate-700 transition-all space-y-2 group">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-950/80 text-red-400 border border-red-500/30 flex items-center space-x-1">
+              <span>📺 YouTube</span>
+            </span>
+            <span class="text-[10px] text-slate-400">Bearhug · เซฟเมื่อ 1 เดือนก่อน</span>
+          </div>
+          <h3 class="text-xs font-semibold text-slate-200 line-clamp-2 group-hover:text-emerald-300 transition-colors">
+            พาตระเวนกินบรรทัดทอง 1 วันเต็ม! คิวยาวแค่ไหนก็ยอม เทคนิคจองคิวเจ๊โอวไม่ต้องรอ 2 ชม.
+          </h3>
+          <p class="text-[11px] text-slate-400 line-clamp-2">
+            แคปชั่น: คลิปนี้สรุปเมนูที่ไม่ควรพลาด และพิกัดที่จอดรถแถวสวนหลวงสแควร์ที่เดินใกล้ที่สุด
+          </p>
+          <div class="pt-1 flex items-center space-x-2">
+            <a href="#" class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-medium rounded-lg text-center border border-slate-700">
+              ▶️ ดูคลิป YouTube
+            </a>
+          </div>
+        </div>
+
+        <!-- Card 3 (Facebook) -->
+        <div class="bg-slate-900/90 hover:bg-slate-850 p-3 rounded-xl border border-slate-800 hover:border-slate-700 transition-all space-y-2 group">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-950/80 text-blue-400 border border-blue-500/30 flex items-center space-x-1">
+              <span>📘 Facebook</span>
+            </span>
+            <span class="text-[10px] text-slate-400">เพจ อร่อยไปแดก · เซฟเมื่อ 2 เดือนก่อน</span>
+          </div>
+          <h3 class="text-xs font-semibold text-slate-200 line-clamp-2 group-hover:text-emerald-300 transition-colors">
+            รีวิวหมูกรอบในตำนาน หนังฟูกรอบสะท้านตับ น้ำจิ้มซีฟู้ดมะนาวแท้
+          </h3>
+          <p class="text-[11px] text-slate-400 line-clamp-2">
+            แคปชั่น: ร้านเปิด 16.30 - 24.00 น. ใครจะกินมาม่าต้มยำต้องรอรอบ 22.00 น. เป็นต้นไปนะจ๊ะ
+          </p>
+          <div class="pt-1 flex items-center space-x-2">
+            <a href="#" class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-medium rounded-lg text-center border border-slate-700">
+              ▶️ ดูโพสต์ Facebook
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2B. MODE: TAB CAROUSEL (Alternative) -->
+      <div id="view-mode-tab" class="hidden flex-1 flex flex-col justify-between p-3 space-y-3">
+        <!-- Sub-tabs switcher -->
+        <div class="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+          <button onclick="switchTab(0)" id="subtab-0" class="flex-1 py-1.5 rounded-lg font-semibold bg-indigo-600 text-white transition-all text-center">
+            1. TikTok
+          </button>
+          <button onclick="switchTab(1)" id="subtab-1" class="flex-1 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-all text-center">
+            2. YouTube
+          </button>
+          <button onclick="switchTab(2)" id="subtab-2" class="flex-1 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-all text-center">
+            3. Facebook
+          </button>
+        </div>
+
+        <!-- Single Selected Tab Content -->
+        <div id="tab-content" class="flex-1 bg-slate-900/90 border border-slate-800 p-3.5 rounded-xl space-y-2.5">
+          <!-- Injected via JS -->
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="flex items-center justify-between text-xs text-slate-400 px-1 pt-1 border-t border-slate-800/80">
+          <button onclick="prevTab()" class="px-2.5 py-1 bg-slate-800 rounded-lg text-white hover:bg-slate-700">← คลิปก่อนหน้า</button>
+          <span id="tab-indicator" class="font-mono text-emerald-400">1 / 3</span>
+          <button onclick="nextTab()" class="px-2.5 py-1 bg-slate-800 rounded-lg text-white hover:bg-slate-700">คลิปถัดไป →</button>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Interactive Script -->
+  <script>
+    const clips = [
+      {
+        platform: 'TikTok',
+        color: 'text-pink-400 bg-black border-pink-500/30',
+        author: '@foodie_bkk · เซฟเมื่อ 2 สัปดาห์ก่อน',
+        title: 'มาม่าต้มยำทะเลรวมมิตรเดือดรอบดึก! หมูกรอบโคตรฟิน สั่งจานยักษ์กิน 4 คนแทบไม่หมด',
+        caption: 'อย่าลืมสั่งยำแซลมอนนะทุกคน แซ่บมาก แนะนำให้ไปกดบัตรคิวก่อน 2 ทุ่ม...',
+        btn: '▶️ ดูคลิป TikTok'
+      },
+      {
+        platform: 'YouTube',
+        color: 'text-red-400 bg-red-950/80 border-red-500/30',
+        author: 'Bearhug · เซฟเมื่อ 1 เดือนก่อน',
+        title: 'พาตระเวนกินบรรทัดทอง 1 วันเต็ม! คิวยาวแค่ไหนก็ยอม เทคนิคจองคิวเจ๊โอวไม่ต้องรอ 2 ชม.',
+        caption: 'คลิปนี้สรุปเมนูที่ไม่ควรพลาด และพิกัดที่จอดรถแถวสวนหลวงสแควร์ที่เดินใกล้ที่สุด',
+        btn: '▶️ ดูคลิป YouTube'
+      },
+      {
+        platform: 'Facebook',
+        color: 'text-blue-400 bg-blue-950/80 border-blue-500/30',
+        author: 'เพจ อร่อยไปแดก · เซฟเมื่อ 2 เดือนก่อน',
+        title: 'รีวิวหมูกรอบในตำนาน หนังฟูกรอบสะท้านตับ น้ำจิ้มซีฟู้ดมะนาวแท้',
+        caption: 'ร้านเปิด 16.30 - 24.00 น. ใครจะกินมาม่าต้มยำต้องรอรอบ 22.00 น. เป็นต้นไปนะจ๊ะ',
+        btn: '▶️ ดูโพสต์ Facebook'
+      }
+    ];
+
+    let currentTabIndex = 0;
+
+    function renderTab() {
+      const c = clips[currentTabIndex];
+      const el = document.getElementById('tab-content');
+      el.innerHTML = `
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded-md border ${c.color}">
+            ${c.platform}
+          </span>
+          <span class="text-[10px] text-slate-400">${c.author}</span>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-100">
+          ${c.title}
+        </h3>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          ${c.caption}
+        </p>
+        <div class="pt-2">
+          <a href="#" class="block w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-xl text-center shadow-lg transition-colors">
+            ${c.btn}
+          </a>
+        </div>
+      `;
+
+      document.getElementById('tab-indicator').textContent = `${currentTabIndex + 1} / ${clips.length}`;
+      
+      [0, 1, 2].forEach(i => {
+        const btn = document.getElementById(`subtab-${i}`);
+        if (i === currentTabIndex) {
+          btn.className = "flex-1 py-1.5 rounded-lg font-semibold bg-indigo-600 text-white transition-all text-center";
+        } else {
+          btn.className = "flex-1 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-all text-center";
+        }
+      });
+    }
+
+    function switchTab(index) {
+      currentTabIndex = index;
+      renderTab();
+    }
+
+    function prevTab() {
+      currentTabIndex = (currentTabIndex - 1 + clips.length) % clips.length;
+      renderTab();
+    }
+
+    function nextTab() {
+      currentTabIndex = (currentTabIndex + 1) % clips.length;
+      renderTab();
+    }
+
+    function setMode(mode) {
+      const listEl = document.getElementById('view-mode-list');
+      const tabEl = document.getElementById('view-mode-tab');
+      const btnList = document.getElementById('btn-mode-list');
+      const btnTab = document.getElementById('btn-mode-tab');
+
+      if (mode === 'list') {
+        listEl.classList.remove('hidden');
+        tabEl.classList.add('hidden');
+        btnList.className = "px-4 py-2 rounded-lg text-xs font-semibold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/30";
+        btnTab.className = "px-4 py-2 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white";
+      } else {
+        listEl.classList.add('hidden');
+        tabEl.classList.remove('hidden');
+        btnTab.className = "px-4 py-2 rounded-lg text-xs font-semibold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/30";
+        btnList.className = "px-4 py-2 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white";
+        renderTab();
+      }
+    }
+
+    // Initialize
+    renderTab();
+  </script>
+</body>
+</html>

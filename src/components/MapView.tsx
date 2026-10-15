@@ -49,10 +49,58 @@ interface MapViewProps {
   onItemUpdate?: (updatedItem: SavedItem) => void;
 }
 
-type LocationEntry = { location: LocationItem; item: SavedItem };
+export type LocationClusterEntry = {
+  key: string;
+  location: LocationItem;
+  items: SavedItem[];
+};
 
-const getLocationKey = (item: SavedItem, loc: LocationItem) =>
-  `${item.id}:${loc.name}:${loc.lat},${loc.lng}`;
+// Create custom pin with badge counter for locations with multiple items
+const createClusterIcon = (count: number, isSelected: boolean, isMissingCoords: boolean) => {
+  if (count <= 1) {
+    if (isSelected) return activeIcon;
+    if (isMissingCoords) return dummyIcon;
+    return defaultIcon;
+  }
+
+  const pinBg = isSelected ? '#10b981' : '#3b82f6';
+  const badgeBg = '#f43f5e';
+  const badgeText = count > 99 ? '99+' : count.toString();
+
+  const html = `
+    <div style="position: relative; width: 34px; height: 44px; display: flex; align-items: center; justify-content: center;">
+      <svg width="34" height="44" viewBox="0 0 34 44" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0px 3px 6px rgba(0,0,0,0.5));">
+        <path d="M17 0C7.61 0 0 7.61 0 17C0 27.5 17 44 17 44C17 44 34 27.5 34 17C34 7.61 26.39 0 17 0Z" fill="${pinBg}"/>
+        <circle cx="17" cy="16" r="7" fill="white" fill-opacity="0.95"/>
+      </svg>
+      <span style="
+        position: absolute;
+        top: -4px;
+        right: -6px;
+        background: ${badgeBg};
+        color: white;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+        padding: 3px 6px;
+        border-radius: 9999px;
+        border: 2px solid #ffffff;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.35);
+      ">
+        ${badgeText}
+      </span>
+    </div>
+  `;
+
+  return L.divIcon({
+    html,
+    className: 'custom-cluster-marker',
+    iconSize: [34, 44],
+    iconAnchor: [17, 44],
+    popupAnchor: [0, -40]
+  });
+};
 
 // Controller component to smoothly handle map viewport adjustments
 const MapController: React.FC<{
@@ -290,9 +338,8 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
     setDebouncedSearchQuery(mapSearchQuery);
   }, [mapSearchQuery]);
 
-  // Extract filtered locations
-  const allLocations = useMemo(() => {
-    const locs: LocationEntry[] = [];
+  // Extract & cluster filtered locations (group multiple items at the same location)
+  const allLocations = useMemo<LocationClusterEntry[]>(() => {
     const q = debouncedSearchQuery.trim().toLowerCase();
     const cleanQ = q.startsWith('#') ? q.slice(1) : q;
     
@@ -305,19 +352,41 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
       return matchTitle || matchCaption || matchTags || matchLocs;
     });
 
+    const clusterMap = new Map<string, LocationClusterEntry>();
+
     filteredItems.forEach((item) => {
-      if (item.extracted_locations) {
-        item.extracted_locations.forEach((loc) => {
-          if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
-            locs.push({ location: loc, item });
+      if (!item.extracted_locations) return;
+
+      item.extracted_locations.forEach((loc) => {
+        if (!loc || typeof loc.lat !== 'number' || typeof loc.lng !== 'number') return;
+
+        // Grouping key: place_id if known, otherwise coordinate grid + place name
+        let clusterKey: string;
+        if (loc.place_id && !loc.place_id.startsWith('dummy_') && loc.place_id !== 'failed_geocoding' && loc.place_id !== 'no_api_key') {
+          clusterKey = `place:${loc.place_id}`;
+        } else {
+          clusterKey = `coord:${loc.lat.toFixed(4)},${loc.lng.toFixed(4)}:${(loc.name || '').trim().toLowerCase()}`;
+        }
+
+        const existing = clusterMap.get(clusterKey);
+        if (existing) {
+          if (!existing.items.some(i => i.id === item.id)) {
+            existing.items.push(item);
           }
-        });
-      }
+        } else {
+          clusterMap.set(clusterKey, {
+            key: clusterKey,
+            location: loc,
+            items: [item]
+          });
+        }
+      });
     });
-    return locs;
+
+    return Array.from(clusterMap.values());
   }, [items, debouncedSearchQuery]);
 
-  const [selectedPin, setSelectedPin] = useState<LocationEntry | null>(null);
+  const [selectedPin, setSelectedPin] = useState<LocationClusterEntry | null>(null);
 
   // Set programmatic scroll lock to prevent feedback loop
   const triggerProgrammaticScroll = useCallback(() => {
@@ -329,10 +398,8 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
   }, []);
 
   // Ensure card element is within visible count if selecting beyond page
-  const ensurePinVisible = useCallback((entry: LocationEntry) => {
-    const index = allLocations.findIndex(
-      l => getLocationKey(l.item, l.location) === getLocationKey(entry.item, entry.location)
-    );
+  const ensurePinVisible = useCallback((entry: LocationClusterEntry) => {
+    const index = allLocations.findIndex(l => l.key === entry.key);
     if (index >= visibleCount) {
       setVisibleCount(Math.min(index + 20, allLocations.length));
     }
@@ -352,20 +419,20 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
   }, [triggerProgrammaticScroll]);
 
   // Marker click handler: selects pin, centers map, and scrolls card into view
-  const handleMarkerClick = useCallback((entry: LocationEntry) => {
+  const handleMarkerClick = useCallback((entry: LocationClusterEntry) => {
     setSelectedPin(entry);
     setFlyToTarget({ lat: entry.location.lat, lng: entry.location.lng, id: Date.now() });
     ensurePinVisible(entry);
     setTimeout(() => {
-      scrollToCard(getLocationKey(entry.item, entry.location));
+      scrollToCard(entry.key);
     }, 60);
   }, [ensurePinVisible, scrollToCard]);
 
   // Card click handler: selects pin and flies map to it
-  const handleCardClick = useCallback((entry: LocationEntry) => {
+  const handleCardClick = useCallback((entry: LocationClusterEntry) => {
     setSelectedPin(entry);
     setFlyToTarget({ lat: entry.location.lat, lng: entry.location.lng, id: Date.now() });
-    scrollToCard(getLocationKey(entry.item, entry.location));
+    scrollToCard(entry.key);
   }, [scrollToCard]);
 
   // Fit all results handler
@@ -404,9 +471,7 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
 
     if (allLocations.length > 0) {
       // Keep selected pin if still visible in current filter
-      const stillVisible = selectedPin && allLocations.some(l =>
-        getLocationKey(l.item, l.location) === getLocationKey(selectedPin.item, selectedPin.location)
-      );
+      const stillVisible = selectedPin && allLocations.some(l => l.key === selectedPin.key);
       if (!stillVisible) {
         if (isSearching) {
           setSelectedPin(allLocations[0]);
@@ -426,8 +491,8 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
           if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
             const key = entry.target.getAttribute('data-location-key');
             if (key) {
-              const match = allLocations.find(l => getLocationKey(l.item, l.location) === key);
-              if (match && (!selectedPin || getLocationKey(selectedPin.item, selectedPin.location) !== key)) {
+              const match = allLocations.find(l => l.key === key);
+              if (match && (!selectedPin || selectedPin.key !== key)) {
                 setSelectedPin(match);
                 setFlyToTarget({ lat: match.location.lat, lng: match.location.lng, id: Date.now() });
               }
@@ -582,103 +647,166 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
 
   if (!isMounted) return <div className="h-[520px] w-full bg-slate-900 rounded-2xl animate-pulse"></div>;
 
-  // Render full details card body
-  const renderCardDetail = (entry: LocationEntry, isFullStandalone: boolean = false) => {
+  // Render full details card body (Master-Detail for multiple items per location)
+  const renderCardDetail = (entry: LocationClusterEntry, isFullStandalone: boolean = false) => {
     const isMissingCoords = entry.location.place_id && (
       entry.location.place_id.startsWith('dummy_') || 
       entry.location.place_id === 'failed_geocoding' || 
       entry.location.place_id === 'no_api_key'
     );
 
+    const itemCount = entry.items.length;
+
     return (
       <div className={`space-y-4 ${isFullStandalone ? '' : 'p-4'}`}>
-        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-          <span className="text-xs font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2.5 py-0.5 rounded-full">
-            {entry.location.type || 'Location Detail'}
-          </span>
-          <span className="text-[10px] text-slate-500 font-mono">
-            {entry.location.lat.toFixed(4)}, {entry.location.lng.toFixed(4)}
-          </span>
-        </div>
-
-        <div>
-          <h3 className="text-base font-bold text-slate-100 mb-1 flex items-center space-x-2">
-            <span>{entry.location.name}</span>
-          </h3>
-          
-          {isMissingCoords ? (
-            <div className="mt-1.5 inline-flex items-center space-x-1.5 bg-orange-950/60 border border-orange-500/40 text-orange-400 text-[11px] px-2.5 py-1 rounded-md">
-              <span className="font-bold">⚠️ หาพิกัดไม่พบ:</span>
-              <span>กรุณาไปที่ Feed เพื่อแก้ไขพิกัด</span>
+        {/* Top Venue Header */}
+        <div className="pb-3 border-b border-slate-800 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-1.5">
+              <span className="text-xs font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2.5 py-0.5 rounded-full">
+                {entry.location.type || 'Location Detail'}
+              </span>
+              {itemCount > 1 && (
+                <span className="text-xs font-bold text-rose-300 bg-rose-950/70 border border-rose-800/50 px-2.5 py-0.5 rounded-full">
+                  {itemCount} คอนเทนต์ที่นี่
+                </span>
+              )}
             </div>
-          ) : (
-            <p className="text-xs text-slate-400 leading-relaxed">
-              {entry.location.formatted_address || 'Bangkok, Thailand'}
-            </p>
+            <span className="text-[10px] text-slate-500 font-mono">
+              {entry.location.lat.toFixed(4)}, {entry.location.lng.toFixed(4)}
+            </span>
+          </div>
+
+          <div>
+            <h3 className="text-base font-bold text-slate-100 flex items-center space-x-2">
+              <span>{entry.location.name}</span>
+            </h3>
+            
+            {isMissingCoords ? (
+              <div className="mt-1.5 inline-flex items-center space-x-1.5 bg-orange-950/60 border border-orange-500/40 text-orange-400 text-[11px] px-2.5 py-1 rounded-md">
+                <span className="font-bold">⚠️ หาพิกัดไม่พบ:</span>
+                <span>กรุณาไปที่ Feed เพื่อแก้ไขพิกัด</span>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 leading-relaxed mt-0.5">
+                {entry.location.formatted_address || 'Bangkok, Thailand'}
+              </p>
+            )}
+          </div>
+
+          {/* Shared Navigation Button */}
+          {!isMissingCoords && (
+            <div className="pt-1">
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(entry.location.name)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors shadow-lg shadow-emerald-600/20"
+              >
+                <Navigation className="w-3.5 h-3.5" />
+                <span>เปิดใน Google Maps</span>
+              </a>
+            </div>
           )}
         </div>
 
-        <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
-          <div className="text-[11px] text-indigo-400 font-medium flex items-center space-x-1">
-            <Sparkles className="w-3 h-3" />
-            <span>ที่มาจากคอนเทนต์ที่คุณเซฟไว้:</span>
+        {/* Vertical Feed List of all saved items for this location */}
+        <div className="space-y-3">
+          <div className="text-[11px] font-medium text-indigo-400 flex items-center space-x-1 px-0.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>คอนเทนต์ที่คุณเซฟไว้ ({itemCount} คลิป):</span>
           </div>
-          <h4 className="text-xs font-semibold text-slate-200 line-clamp-2">
-            {entry.item.original_title}
-          </h4>
-          <p className="text-[11px] text-slate-400 line-clamp-2">
-            {entry.item.original_caption}
-          </p>
-        </div>
 
-        <div className="pt-1 flex flex-col space-y-2">
-          <div className="flex space-x-2">
-            <a
-              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(entry.location.name)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors shadow-lg shadow-emerald-600/20"
-            >
-              <Navigation className="w-3.5 h-3.5" />
-              <span>เปิดใน Google Maps</span>
-            </a>
-            <a
-              href={entry.item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors shadow-lg shadow-indigo-600/20"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>ดูคลิปต้นฉบับ</span>
-            </a>
-          </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditingItem(entry.item);
-              setEditTags(entry.item.tags?.join(', ') || '');
-              setEditCategory(entry.item.normalized_category || 'General Content');
-            }}
-            className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors border border-slate-700"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span>แก้ไขข้อมูล / เพิ่มพิกัด</span>
-          </button>
+          {entry.items.map((item, idx) => {
+            const url = item.url || '';
+            let platformLabel = 'Social Post';
+            let platformColor = 'bg-slate-800 text-slate-300 border-slate-700';
+
+            if (url.includes('tiktok.com')) {
+              platformLabel = 'TikTok';
+              platformColor = 'bg-black text-pink-400 border-pink-500/30';
+            } else if (url.includes('youtube.com') || url.includes('youtu.be')) {
+              platformLabel = 'YouTube';
+              platformColor = 'bg-red-950/80 text-red-400 border-red-500/30';
+            } else if (url.includes('facebook.com') || url.includes('fb.watch')) {
+              platformLabel = 'Facebook';
+              platformColor = 'bg-blue-950/80 text-blue-400 border-blue-500/30';
+            }
+
+            return (
+              <div 
+                key={item.id} 
+                className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 hover:border-slate-700 space-y-2 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${platformColor}`}>
+                    {platformLabel}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    #{idx + 1}
+                  </span>
+                </div>
+
+                <h4 className="text-xs font-semibold text-slate-200 line-clamp-2">
+                  {item.original_title || 'Untitled Post'}
+                </h4>
+
+                {item.original_caption && (
+                  <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
+                    {item.original_caption}
+                  </p>
+                )}
+
+                <div className="pt-1 flex space-x-2">
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-[11px] rounded-lg flex items-center justify-center space-x-1.5 transition-colors shadow-md shadow-indigo-600/20"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>ดูคลิปต้นฉบับ</span>
+                  </a>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingItem(item);
+                      setEditTags(item.tags?.join(', ') || '');
+                      setEditCategory(item.normalized_category || 'General Content');
+                    }}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium rounded-lg flex items-center justify-center space-x-1 transition-colors border border-slate-700"
+                    title="แก้ไขข้อมูล / เพิ่มพิกัด"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>แก้ไข</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
   };
 
   // Render a compact item card in search results
-  const renderCompactCard = (entry: LocationEntry) => {
+  const renderCompactCard = (entry: LocationClusterEntry) => {
+    const itemCount = entry.items.length;
     return (
       <div className="p-3 space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700/60">
-            {entry.location.type || 'Location'}
-          </span>
+          <div className="flex items-center space-x-1.5">
+            <span className="text-[11px] font-semibold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700/60">
+              {entry.location.type || 'Location'}
+            </span>
+            {itemCount > 1 && (
+              <span className="text-[10px] font-bold text-rose-300 bg-rose-950/70 border border-rose-800/40 px-2 py-0.5 rounded-full">
+                {itemCount} คลิป
+              </span>
+            )}
+          </div>
           <span className="text-[10px] text-slate-500 font-mono">
             {entry.location.lat.toFixed(2)}, {entry.location.lng.toFixed(2)}
           </span>
@@ -687,7 +815,9 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
           {entry.location.name}
         </h4>
         <p className="text-xs text-slate-400 line-clamp-1">
-          {entry.location.formatted_address || entry.item.original_title}
+          {itemCount > 1 
+            ? `${entry.location.formatted_address || ''} (${itemCount} โพสต์ที่บันทึกไว้)`
+            : (entry.items[0]?.original_title || entry.location.formatted_address || '')}
         </p>
       </div>
     );
@@ -748,8 +878,7 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             {allLocations.map((entry) => {
-              const locKey = getLocationKey(entry.item, entry.location);
-              const isSelected = selectedPin ? getLocationKey(selectedPin.item, selectedPin.location) === locKey : false;
+              const isSelected = selectedPin ? selectedPin.key === entry.key : false;
               const isMissingCoords = entry.location.place_id && (
                 entry.location.place_id.startsWith('dummy_') || 
                 entry.location.place_id === 'failed_geocoding' || 
@@ -759,11 +888,14 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
               if (typeof entry.location.lat !== 'number' || typeof entry.location.lng !== 'number') {
                 return null;
               }
+
+              const markerIcon = createClusterIcon(entry.items.length, isSelected, Boolean(isMissingCoords));
+
               return (
                 <Marker
-                  key={locKey}
+                  key={entry.key}
                   position={[Number(entry.location.lat), Number(entry.location.lng)]}
-                  icon={isSelected ? activeIcon : (isMissingCoords ? dummyIcon : defaultIcon)}
+                  icon={markerIcon}
                   eventHandlers={{
                     click: () => handleMarkerClick(entry),
                   }}
@@ -828,8 +960,8 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
               ) : (
                 <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
                   {allLocations.slice(0, visibleCount).map((entry) => {
-                    const key = getLocationKey(entry.item, entry.location);
-                    const isSelected = selectedPin ? getLocationKey(selectedPin.item, selectedPin.location) === key : false;
+                    const key = entry.key;
+                    const isSelected = selectedPin ? selectedPin.key === key : false;
 
                     return (
                       <div
@@ -908,8 +1040,8 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
               ) : (
                 <div className="flex overflow-x-auto snap-x snap-mandatory space-x-3 pb-3 custom-scrollbar -mx-4 px-4">
                   {allLocations.slice(0, visibleCount).map((entry) => {
-                    const key = getLocationKey(entry.item, entry.location);
-                    const isSelected = selectedPin ? getLocationKey(selectedPin.item, selectedPin.location) === key : false;
+                    const key = entry.key;
+                    const isSelected = selectedPin ? selectedPin.key === key : false;
 
                     return (
                       <div

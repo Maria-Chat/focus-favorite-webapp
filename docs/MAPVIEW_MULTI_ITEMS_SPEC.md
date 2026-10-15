@@ -1,4 +1,4 @@
-# Map View — Multi-Items per Location Spec (สถานะ: กำลังพัฒนา 🚧 2026-10-15)
+# Map View — Multi-Items per Location Spec (สถานะ: เสร็จสมบูรณ์ & ผ่านการทดสอบแล้ว ✅ 2026-10-15)
 
 > 📌 **เป้าหมาย:** เมื่อพิกัด/สถานที่หนึ่งๆ มีคอนเทนต์ที่ผู้ใช้บันทึกไว้มากกว่า 1 รายการ (เช่น ร้านดังที่มีทั้งคลิปรีวิวจาก TikTok, YouTube, และ Facebook Reels) ผู้ใช้ต้องสามารถมองเห็นตัวเลขรวมบนหมุดแผนที่ และเปิดดูคอนเทนต์ทั้งหมดที่พูดถึงสถานที่นั้นได้อย่างครบถ้วนในที่เดียว  
 > **ไฟล์หลักที่เกี่ยวข้อง:** [`src/components/MapView.tsx`](file:///Users/maria/Documents/focus%20favorite%20webapp/src/components/MapView.tsx)
@@ -59,8 +59,8 @@ export type LocationClusterEntry = {
 ---
 
 ## 4. ขั้นตอนการดำเนินงาน (Checklist)
-- [ ] 1. อัปเดต Data Structure ใน `MapView.tsx`: ปรับ `allLocations` จาก `LocationEntry[]` เป็น `LocationClusterEntry[]`
-- [ ] 2. สร้าง Custom Leaflet Marker Icon สำหรับหมุดที่มี Counter Badge (ใช้ `L.divIcon`)
-- [ ] 3. ปรับปรุง `renderCardDetail` ให้เป็น Master-Detail (Header สถานที่ 1 ครั้ง + รายการคลิปทั้งหมด)
-- [ ] 4. ปรับปรุง Search Result Mode และ Mobile Carousel ให้รองรับ Cluster Data
-- [ ] 5. ทดสอบ `npm run build` และ Deploy ผ่าน SSH ขึ้น VPS
+- [x] 1. อัปเดต Data Structure ใน `MapView.tsx`: ปรับ `allLocations` จาก `LocationEntry[]` เป็น `LocationClusterEntry[]`
+- [x] 2. สร้าง Custom Leaflet Marker Icon สำหรับหมุดที่มี Counter Badge (ใช้ `L.divIcon`)
+- [x] 3. ปรับปรุง `renderCardDetail` ให้เป็น Master-Detail (Header สถานที่ 1 ครั้ง + รายการคลิปทั้งหมดพร้อม Platform Badges)
+- [x] 4. ปรับปรุง Search Result Mode และ Mobile Carousel ให้รองรับ Cluster Data
+- [x] 5. ทดสอบ `npm run build` ผ่าน 0 errors และเตรียมพร้อมสำหรับการ Deploy
