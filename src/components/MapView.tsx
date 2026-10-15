@@ -80,31 +80,80 @@ const MapController: React.FC<{
   return null;
 };
 
-const CurrentLocationControl = () => {
+// Helper to read cached user location from sessionStorage
+const getCachedLocation = (): [number, number] | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = sessionStorage.getItem('focus_user_last_location');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+        return [parsed.lat, parsed.lng];
+      }
+    }
+  } catch (_) {}
+  return null;
+};
+
+const CurrentLocationControl: React.FC<{
+  autoLocate?: boolean;
+}> = ({ autoLocate = false }) => {
   const map = useMap();
   const [locating, setLocating] = useState(false);
+  const userLayersRef = useRef<L.Layer[]>([]);
+  const hasAutoLocatedRef = useRef(false);
 
-  const handleLocate = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
+  const performLocate = useCallback((isManual: boolean) => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      if (isManual) alert('เบราว์เซอร์นี้ไม่รองรับ Geolocation');
+      return;
+    }
+
     setLocating(true);
+
     const onSuccess = (pos: GeolocationPosition) => {
-      const { latitude, longitude } = pos.coords;
+      const { latitude, longitude, accuracy } = pos.coords;
+
+      try {
+        sessionStorage.setItem('focus_user_last_location', JSON.stringify({ lat: latitude, lng: longitude }));
+      } catch (_) {}
+
       map.flyTo([latitude, longitude], 14, { animate: true });
 
-      const radius = pos.coords.accuracy || 100;
-      L.circle([latitude, longitude], {
+      // Clean up previous location markers
+      userLayersRef.current.forEach(layer => {
+        try { map.removeLayer(layer); } catch (_) {}
+      });
+      userLayersRef.current = [];
+
+      const radius = accuracy || 100;
+      const circle = L.circle([latitude, longitude], {
         radius: radius > 1000 ? 500 : radius,
         color: '#6366f1',
         fillColor: '#818cf8',
-        fillOpacity: 0.2,
-        weight: 2
+        fillOpacity: 0.18,
+        weight: 1.5
       }).addTo(map);
 
+      // Distinct center dot for current location (Google Maps style)
+      const dot = L.circleMarker([latitude, longitude], {
+        radius: 7,
+        color: '#ffffff',
+        fillColor: '#4f46e5',
+        fillOpacity: 1,
+        weight: 2.5
+      }).addTo(map);
+
+      userLayersRef.current = [circle, dot];
       setLocating(false);
     };
 
     const onFinalError = (err: GeolocationPositionError) => {
+      setLocating(false);
+      if (!isManual) {
+        console.warn('Auto-locate on mount could not determine location:', err.message);
+        return;
+      }
       let msg = 'ไม่สามารถดึงตำแหน่งปัจจุบันได้';
       if (!window.isSecureContext) {
         msg += ' — เบราว์เซอร์อนุญาต Location เฉพาะเว็บ HTTPS กรุณาเปิดผ่านลิงก์ https://';
@@ -116,7 +165,6 @@ const CurrentLocationControl = () => {
         msg += ' — กรุณาเปิด GPS/Location ในเครื่อง';
       }
       alert(msg);
-      setLocating(false);
     };
 
     navigator.geolocation.getCurrentPosition(
@@ -131,6 +179,30 @@ const CurrentLocationControl = () => {
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60 * 1000 }
     );
+  }, [map]);
+
+  // Clean up layers on unmount
+  useEffect(() => {
+    return () => {
+      userLayersRef.current.forEach(layer => {
+        try { map.removeLayer(layer); } catch (_) {}
+      });
+      userLayersRef.current = [];
+    };
+  }, [map]);
+
+  // Auto-locate on initial mount if requested
+  useEffect(() => {
+    if (autoLocate && !hasAutoLocatedRef.current) {
+      hasAutoLocatedRef.current = true;
+      performLocate(false);
+    }
+  }, [autoLocate, performLocate]);
+
+  const handleLocate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    performLocate(true);
   };
 
   return (
@@ -156,6 +228,18 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
   // Map Navigation triggers
   const [fitBoundsRequest, setFitBoundsRequest] = useState<{ bounds: L.LatLngBounds; id: number } | null>(null);
   const [flyToTarget, setFlyToTarget] = useState<{ lat: number; lng: number; id: number } | null>(null);
+
+  // Compute initial center: targetLocation -> cached location -> default (Bangkok)
+  const initialCenter = useMemo<[number, number]>(() => {
+    if (targetLocation && typeof targetLocation.lat === 'number' && typeof targetLocation.lng === 'number') {
+      return [Number(targetLocation.lat), Number(targetLocation.lng)];
+    }
+    const cached = getCachedLocation();
+    if (cached) return cached;
+    return [13.7563, 100.5018];
+  }, [targetLocation]);
+
+  const initialZoom = targetLocation ? 14 : (getCachedLocation() ? 13 : 11);
 
   // Progressive rendering for high-result queries
   const [visibleCount, setVisibleCount] = useState(40);
@@ -314,8 +398,6 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
       if (target) {
         setSelectedPin(target);
         setFlyToTarget({ lat: target.location.lat, lng: target.location.lng, id: Date.now() });
-      } else {
-        setSelectedPin(allLocations[0] || null);
       }
       return;
     }
@@ -326,10 +408,12 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
         getLocationKey(l.item, l.location) === getLocationKey(selectedPin.item, selectedPin.location)
       );
       if (!stillVisible) {
-        setSelectedPin(allLocations[0]);
+        if (isSearching) {
+          setSelectedPin(allLocations[0]);
+        }
       }
     }
-  }, [targetLocation, allLocations]);
+  }, [targetLocation, allLocations, isSearching]);
 
   // IntersectionObserver for mobile cards carousel swipe sync
   useEffect(() => {
@@ -654,12 +738,8 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
         {/* Real Map Canvas */}
         <div className="h-[340px] sm:h-[420px] lg:h-full lg:col-span-2 rounded-2xl border border-slate-800 relative overflow-hidden bg-slate-900 flex z-0 shrink-0">
           <MapContainer 
-            center={
-              selectedPin
-                ? [selectedPin.location.lat, selectedPin.location.lng]
-                : [13.7563, 100.5018]
-            } 
-            zoom={12} 
+            center={initialCenter} 
+            zoom={initialZoom} 
             scrollWheelZoom={true} 
             className="w-full h-full z-0"
           >
@@ -695,7 +775,7 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
               fitBoundsRequest={fitBoundsRequest} 
               flyToTarget={flyToTarget} 
             />
-            <CurrentLocationControl />
+            <CurrentLocationControl autoLocate={!targetLocation} />
           </MapContainer>
 
           {/* Fit all results button in search mode */}
@@ -779,12 +859,20 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
             </div>
           ) : (
             /* Normal Mode: Single Card Drawer */
-            <div className="glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4 h-full relative z-10 overflow-y-auto custom-scrollbar">
+            <div className="glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-center space-y-4 h-full relative z-10 overflow-y-auto custom-scrollbar">
               {selectedPin ? (
                 renderCardDetail(selectedPin, true)
               ) : (
-                <div className="text-center py-20 text-slate-500 text-xs">
-                  เลือกหมุดบนแผนที่เพื่อดูรายละเอียดและโพสต์ต้นทาง
+                <div className="flex flex-col items-center justify-center p-6 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                    <MapPin className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-200">ตำแหน่งของคุณบนแผนที่</h4>
+                    <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto leading-relaxed">
+                      แตะหมุดสถานที่รอบตัวบนแผนที่ เพื่อเปิดดูคอนเทนต์และพิกัดที่คุณบันทึกไว้
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -860,8 +948,14 @@ export const MapView: React.FC<MapViewProps> = ({ items, targetLocation, onItemU
               {selectedPin ? (
                 renderCardDetail(selectedPin, true)
               ) : (
-                <div className="text-center py-10 text-slate-500 text-xs">
-                  เลือกหมุดบนแผนที่เพื่อดูรายละเอียดและโพสต์ต้นทาง
+                <div className="py-6 px-4 text-center flex flex-col items-center justify-center space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                    <MapPin className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <h4 className="text-xs font-semibold text-slate-200">ตำแหน่งของคุณบนแผนที่</h4>
+                  <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+                    แตะหมุดสถานที่บนแผนที่ เพื่อเปิดดูคอนเทนต์ที่คุณบันทึกไว้
+                  </p>
                 </div>
               )}
             </div>

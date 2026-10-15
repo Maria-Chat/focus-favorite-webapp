@@ -90,12 +90,19 @@ export default function Home() {
     setSavedItems(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
   };
 
+  const handleTabChange = (tab: 'feed' | 'map' | 'sandbox' | 'extension') => {
+    if (tab === 'map') {
+      setTargetMapLocation(null);
+    }
+    setActiveTab(tab);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0b0f19]">
       {/* Header Bar */}
       <Navigation
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleTabChange}
         totalSavedCount={savedItems.length}
       />
 

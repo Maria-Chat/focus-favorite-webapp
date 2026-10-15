@@ -55,7 +55,7 @@
 
 ## 5. การแสดงผล (User Interface)
 - **Feed View:** Infinite Scroll, รองรับ Native Embed (Iframe ของ YT/FB) หรือเล่นตรงผ่าน `<video>` tag ถ้าดึงไฟล์ .mp4 ได้
-- **Map View:** แสดงหมุดสถานที่จาก AI ด้วย `react-leaflet` (Leaflet) พร้อมระบบ Search ค้นหาเพื่อกรองพิกัดบนแผนที่แบบ Local
+- **Map View:** แสดงหมุดสถานที่จาก AI ด้วย `react-leaflet` (Leaflet) พร้อมระบบค้นหาแบบ Adaptive Split View: Desktop แสดงรายการการ์ดแนวตั้งคู่แผนที่ / Mobile แสดง Snap Carousel แนวนอน, Two-Way Sync ระหว่างหมุดและการ์ด, Auto-fitBounds ทุกจุดที่ค้นพบพร้อมปุ่ม "ดูทั้งหมด N จุด", Progressive Rendering และ GPS Current Location (รายละเอียดฉบับเต็มดูใน `docs/MAPVIEW_SEARCH_SPEC.md`)
 - **Semantic Search:** ค้นหาเนื้อหาด้วย Context (Cosine Similarity) 
 
 *(หมายเหตุ: ไฟล์ `prd.md` และ `IMPLEMENTATION_PLAN.md` เดิม เป็นข้อมูลเก่าและถูก Deprecated แล้ว ให้อ้างอิงการทำงานจากไฟล์นี้เป็นหลัก)*
