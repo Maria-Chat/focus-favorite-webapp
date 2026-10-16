@@ -58,9 +58,9 @@
 ---
 
 ## 3. ขั้นตอนการตรวจสอบและทดสอบ (Validation Checklist)
-- [ ] 1. สร้าง `src/app/api/queue-status/route.ts` พร้อม fallback handling
-- [ ] 2. ปรับ `src/app/api/ingest/route.ts` เพื่อปิดกั้นการลบ DB (Safety Lock)
-- [ ] 3. อัปเดต `Navigation.tsx` (ลบ Sandbox, เพิ่ม Queue Status Pill & Modal)
-- [ ] 4. อัปเดต `page.tsx` (เอาแท็บ Sandbox ออก)
-- [ ] 5. รัน `npm run build` ตรวจสอบ 0 type errors
-- [ ] 6. Deploy ขึ้น VPS และทดสอบบน https://72-62-254-106.sslip.io
+- [x] 1. สร้าง `src/app/api/queue-status/route.ts` พร้อม fallback handling
+- [x] 2. ปรับ `src/app/api/ingest/route.ts` เพื่อปิดกั้นการลบ DB (Safety Lock)
+- [x] 3. อัปเดต `Navigation.tsx` (ลบ Sandbox, เพิ่ม Queue Status Pill & Modal)
+- [x] 4. อัปเดต `page.tsx` (เอาแท็บ Sandbox ออก)
+- [x] 5. รัน `npm run build` ตรวจสอบ 0 type errors
+- [x] 6. Deploy ขึ้น VPS และทดสอบบน https://72-62-254-106.sslip.io
