@@ -57,6 +57,7 @@
 - **Feed View:** Infinite Scroll, รองรับ Native Embed (Iframe ของ YT/FB) หรือเล่นตรงผ่าน `<video>` tag ถ้าดึงไฟล์ .mp4 ได้
 - **Map View:** แสดงหมุดสถานที่จาก AI ด้วย `react-leaflet` (Leaflet) พร้อมระบบค้นหาแบบ Adaptive Split View, Auto-fitBounds ทุกจุดที่ค้นพบ, Progressive Rendering, GPS Current Location (ดู `docs/MAPVIEW_SEARCH_SPEC.md`) และระบบรวมคอนเทนต์หลายไอเทมต่อ 1 พิกัด (Multi-Items per Location, ดู `docs/MAPVIEW_MULTI_ITEMS_SPEC.md`)
 - **Semantic Search:** ค้นหาเนื้อหาด้วย Context (Cosine Similarity) 
+- **AI Queue & Health Monitor:** ป้ายสถานะเรียลไทม์บน Header แสดงสถานะคิว Inngest / Gemini AI พร้อมปุ่มสั่ง Retry Pending และปลดระวาง DevSandbox ออกเพื่อความปลอดภัยของข้อมูล (ดู `docs/AI_QUEUE_MONITOR_AND_SANDBOX_REMOVAL_SPEC.md`) 
 
 *(หมายเหตุ: ไฟล์ `prd.md` และ `IMPLEMENTATION_PLAN.md` เดิม เป็นข้อมูลเก่าและถูก Deprecated แล้ว ให้อ้างอิงการทำงานจากไฟล์นี้เป็นหลัก)*
 

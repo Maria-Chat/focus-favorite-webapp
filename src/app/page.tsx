@@ -5,13 +5,11 @@ import { Navigation } from '../components/Navigation';
 import { FeedView } from '../components/FeedView';
 import dynamic from 'next/dynamic';
 const MapView = dynamic(() => import('../components/MapView').then(mod => mod.MapView), { ssr: false });
-import { DevSandbox } from '../components/DevSandbox';
 import { ExtensionGuide } from '../components/ExtensionGuide';
-import { INITIAL_MOCK_ITEMS } from '../lib/mockData';
 import { SavedItem } from '../types';
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'feed' | 'map' | 'sandbox' | 'extension'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'map' | 'extension'>('feed');
   const [targetMapLocation, setTargetMapLocation] = useState<{lat: number, lng: number} | null>(null);
   const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -82,15 +80,12 @@ export default function Home() {
     }
   }, []);
 
-  const handleAddItem = (newItem: SavedItem) => {
-    setSavedItems((prev) => [newItem, ...prev]);
-  };
 
   const handleUpdateItem = (updatedItem: SavedItem) => {
     setSavedItems(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
   };
 
-  const handleTabChange = (tab: 'feed' | 'map' | 'sandbox' | 'extension') => {
+  const handleTabChange = (tab: 'feed' | 'map' | 'extension') => {
     if (tab === 'map') {
       setTargetMapLocation(null);
     }
@@ -148,11 +143,6 @@ export default function Home() {
             )}
           </>
         )}
-
-        {activeTab === 'sandbox' && (
-          <DevSandbox onAddItem={handleAddItem} />
-        )}
-
         {activeTab === 'extension' && (
           <ExtensionGuide />
         )}

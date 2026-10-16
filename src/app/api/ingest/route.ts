@@ -27,23 +27,11 @@ export async function OPTIONS() {
   });
 }
 
-// DELETE /api/ingest — Clear Database (legacy backup file is left untouched)
+// DELETE /api/ingest — Permanently disabled for safety to protect production database
 export async function DELETE() {
-  if (hasSupabase()) {
-    const { error } = await supabaseAdmin
-      .from('saved_items')
-      .delete()
-      .neq('url', 'dummy'); // delete all rows
-      
-    if (error) {
-      console.error('Failed to wipe Supabase:', error.message);
-      return NextResponse.json({ error: 'Failed to wipe database' }, { status: 500 });
-    }
-  }
-
   return NextResponse.json(
-    { message: 'Database cleared successfully' },
-    { status: 200, headers: CORS }
+    { error: 'Database wipe is permanently disabled for data safety.' },
+    { status: 403, headers: CORS }
   );
 }
 
