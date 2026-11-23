@@ -50,6 +50,8 @@
 3. **การจัดการ Disk Space:**
    - **ห้ามใช้ `killall -9` กับ yt-dlp** เพราะจะทำให้ไฟล์ชั่วคราว (`_MEI*`) บวมเต็มเครื่อง (เคยทำดิสก์เต็ม 41GB มาแล้ว)
    - มี Script ป้องกัน: `npm run cleanup` (ล้างไฟล์ขยะ) และ `npm run watchdog` (เฝ้าดิสก์เบื้องหลัง)
+4. **Supabase Keep-Alive (ป้องกัน Auto-Pause):**
+   - ตั้ง `crontab` บน VPS (`0 2,14 * * *` = 09:00 และ 21:00 น. เวลาไทย) รัน `/root/supabase-keepalive.sh` ยิง Query เบาๆ ไปที่ Supabase ทุก 12 ชม. เพื่อป้องกันการ Pause อัตโนมัติหลังไม่ใช้งานเกิน 7 วัน (ดูรายละเอียดใน `docs/KNOWN_ISSUES.md` หัวข้อที่ 5 และ `docs/HANDOFF_RESOURCE_SAFETY.md`)
 
 ---
 

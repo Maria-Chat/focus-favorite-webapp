@@ -84,3 +84,24 @@
 - **Zero-Jump Render ด้วย `sessionStorage`:** เมื่อหาตำแหน่งสำเร็จ ให้บันทึก `{ lat, lng }` ลง `sessionStorage.setItem('focus_user_last_location', ...)` เพื่อให้การเปิดแท็บ Map ในครั้งถัดไป เริ่มต้นเรนเดอร์แผนที่ตรงจุดเดิมทันที ไม่ต้องกระตุกเด้งไปกรุงเทพฯ ก่อน
 - **Dual-Indicator Marker (Google Maps Style):** วาดทั้งวงรัศมีความแม่นยำ (`L.circle`) และจุดกึ่งกลางที่ชัดเจน (`L.circleMarker` จุดสีครามขอบขาว) โดยเก็บใน `userLayersRef` เพื่อสั่ง `removeLayer` ตัวเก่าออกก่อนวาดใหม่เสมอ
 - **Navbar Tab Reset:** เมื่อผู้ใช้กดคลิกแท็บ "Map View" ใน `<Navigation>` ให้รีเซ็ต `targetMapLocation` เป็น `null` เสมอ เพื่อให้ระบบเข้าสู่โหมด Current Location ตามที่ผู้ใช้คาดหวัง
+
+---
+
+## 5. Supabase Free Tier Auto-Pause (ข้อมูลขึ้น 0 Saved / Import ไม่เข้าคิว)
+
+**อาการที่พบ (เหตุการณ์ 2026-11-23):**
+- หน้าเว็บแสดง `0 Saved` และป้าย `AI พร้อม` เนื่องจาก `/api/queue-status` ใช้ `count ?? 0` เมื่อ Supabase JS client เชื่อมต่อไม่ได้ (ไม่ได้ throw error)
+- Log บน VPS (`pm2 logs focus-web --err`) แสดง `getaddrinfo ENOTFOUND yiqwtpcfibtnchvwfdgg.supabase.co`
+- การกด Import จาก Chrome Extension (`POST /api/ingest`) จะ log `0 new (queued to Inngest)` และไม่ส่งงานต่อเข้า Inngest/Gemini ทำให้เครดิต Gemini ไม่ถูกใช้งาน
+
+**สาเหตุ:**
+- Supabase Free Tier จะ **Auto-Pause** โปรเจกต์อัตโนมัติเมื่อไม่มีการใช้งานเกิน 7 วัน และปิด DNS ชั่วคราว (ข้อมูลไม่ได้หาย เก็บอยู่ใน Snapshot)
+
+**⚠️ ข้อควรระวังระหว่างกู้คืน (DO NOT):**
+- **ห้าม** ตกใจหรือสร้างตาราง/รีเซ็ตฐานข้อมูลใหม่ทันทีหลังกด **Restore project** ใน Supabase Dashboard
+- ระหว่างระบบกำลัง Restore (ใช้เวลา 2–5 นาที) จะพบ `HTTP 521` และช่วงสั้นๆ ที่ PostgREST ตอบ `404 PGRST205` (`Could not find the table 'public.saved_items' in the schema cache`) ก่อนที่ข้อมูลทั้งหมดจะโหลดเสร็จสมบูรณ์ ให้รอ 1–2 นาทีแล้วเช็ค `/api/queue-status` ใหม่
+- รายการที่กด Import ระหว่างที่ Supabase ถูก Pause จะไม่ถูกบันทึกลง DB ต้องกด Sync ใหม่จาก Chrome Extension หลัง DB กลับมา Active
+
+**✅ วิธีป้องกันถาวร (ติดตั้งแล้วบน VPS 2026-11-23):**
+- ตั้ง `crontab` บน VPS (`0 2,14 * * *` = 09:00 และ 21:00 น. เวลาไทย) รัน `/root/supabase-keepalive.sh` เพื่อยิง `GET /rest/v1/saved_items?select=id&limit=1` ไปที่ Supabase ทุก 12 ชั่วโมง
+- อ่านค่า Env จาก `/root/focus-favorite-webapp/.env.local` โดยไม่ hardcode key และจำกัดขนาด log ไว้ที่ 100 บรรทัดล่าสุดใน `/var/log/supabase-keepalive.log`

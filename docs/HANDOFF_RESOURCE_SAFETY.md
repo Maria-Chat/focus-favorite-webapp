@@ -99,6 +99,9 @@ df -h / ; du -sh $TMPDIR ~/.npm/_logs   # เช็คพื้นที่
 ## 6. VPS operations (อัปเดต 2026-10-13)
 - **VPS:** `root@72.62.254.106` เข้าด้วย SSH key ได้แล้ว (`~/.ssh/id_ed25519` บน Mac ของ Maria) โค้ดอยู่ที่ `/root/focus-favorite-webapp`
 - **pm2:** `focus-web` (Next.js :3000) + `focus-worker` (Inngest dev server :8288) → `pm2 list`, `pm2 logs focus-web --err --lines 100 --nostream`
+- 💡 **กรณีเจอ 502 Bad Gateway:** เกิดจาก Nginx/OpenResty รันปกติ แต่ Next.js (`focus-web` พอร์ต 3000) ดับอยู่ ให้ SSH เข้าไปเช็ค `pm2 list` หากพบว่าว่างเปล่า ให้กู้คืนด้วย `pm2 resurrect`
+- 🛡️ **Auto-start on boot:** ตั้งค่า `pm2 startup systemd` และ `systemctl enable pm2-root` พร้อม `pm2 save` เรียบร้อยแล้ว (อัปเดต 2026-10-21) ป้องกัน PM2 หายเมื่อเซิร์ฟเวอร์รีบูต
+- ⏰ **Supabase Keep-Alive Cron (อัปเดต 2026-11-23):** ตั้ง crontab บน VPS (`0 2,14 * * *` = 09:00 และ 21:00 น. เวลาไทย) เรียก `/root/supabase-keepalive.sh` ยิง `GET /rest/v1/saved_items?select=id&limit=1` ไปที่ Supabase ทุก 12 ชม. เพื่อป้องกัน Supabase Free Tier ถูก Auto-Pause หลังไม่มีการใช้งาน 7 วัน (เก็บ log แบบจำกัด 100 บรรทัดล่าสุดที่ `/var/log/supabase-keepalive.log`)
 - ⚠️ log ของ Inngest/Next บน Mac เป็นของเครื่อง Local **ไม่ใช่ VPS** ต้องดูผ่าน SSH เท่านั้น
 - ⚠️ บรรทัด `llm 402` ใน log ของ focus-web ไม่มี timestamp ห้ามสรุปเวลาที่เกิดจากบรรทัดนี้ ให้ทดสอบ key จริงด้วย curl ก่อนสรุปว่าเครดิตหมด
 
@@ -113,6 +116,11 @@ df -h / ; du -sh $TMPDIR ~/.npm/_logs   # เช็คพื้นที่
   ```
 - ความเร็วจริงประมาณ 6 ชิ้น/นาที (concurrency 1)
 - **อีกเรื่อง:** yt-dlp บน VPS โดน YouTube บล็อก ("Sign in to confirm you're not a bot") → ข้ามการดึงเสียง ต้องใส่ cookies ถ้าต้องการ transcript จากเสียง
+
+### เหตุการณ์ 2026-11-23: Supabase Free Tier Auto-Pause & Keep-Alive Cron
+- **อาการ:** เว็บแสดง `0 Saved`, `POST /api/ingest` ไม่เข้าคิว Gemini (`0 new`), และ VPS log ขึ้น `ENOTFOUND yiqwtpcfibtnchvwfdgg.supabase.co` เนื่องจากไม่ได้ใช้งานเกิน 7 วันจน Supabase Free Tier Auto-Pause
+- **การกู้คืน:** กด **Restore project** ที่ Supabase Dashboard (ระหว่างบูตมีช่วง `HTTP 521` และ `404 PGRST205` ชั่วคราว ~1–2 นาที ก่อนข้อมูลครบ 10,466 รายการกลับมาปกติ)
+- **การป้องกันถาวร:** สร้าง `/root/supabase-keepalive.sh` (`chmod 700`) ไว้นอก git repo เพื่อไม่ชน `git pull` และตั้ง `crontab` รันวันละ 2 ครั้ง (`0 2,14 * * *` = 09:00 / 21:00 น. เวลาไทย) พร้อมจำกัด log ที่ `/var/log/supabase-keepalive.log` ไม่เกิน 100 บรรทัด (รายละเอียดข้อควรระวังดูเพิ่มเติมใน `docs/KNOWN_ISSUES.md` หัวข้อที่ 5)
 
 ## 7. อัปเดต 2026-10-14 — HTTPS, deploy, Map View
 ### สถานะคิว
